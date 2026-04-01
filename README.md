@@ -39,6 +39,8 @@
   <img src="docs/splash.png" alt="gnhf — Good Night, Have Fun" width="800">
 </p>
 
+Never wake up empty-handed.
+
 gnhf is a [ralph](https://ghuntley.com/ralph/), [autoresearch](https://github.com/karpathy/autoresearch)-style orchestrator that keeps your agents running while you sleep — each iteration makes one small, committed, documented change towards an objective.
 You wake up to a branch full of clean work and a log of everything that happened.
 
@@ -79,10 +81,6 @@ npm install
 npm run build
 npm link
 ```
-
-If you want to run `gnhf --agent rovodev`, install Atlassian's `acli` and authenticate it with Rovo Dev first.
-
-If you want to run `gnhf --agent opencode`, install `opencode` and authenticate at least one provider first.
 
 ## How It Works
 
@@ -168,9 +166,16 @@ If the file does not exist yet, `gnhf` creates it on first run using the resolve
 
 CLI flags override config file values. The iteration and token caps are runtime-only flags and are not persisted in `config.yml`.
 
-When using `agent: rovodev`, `gnhf` starts a local `acli rovodev serve --disable-session-token <port>` process automatically in the repo workspace. That requires `acli` to be installed and already authenticated for Rovo Dev.
+## Agents
 
-When using `agent: opencode`, `gnhf` starts a local `opencode serve --hostname 127.0.0.1 --port <port> --print-logs` process automatically, creates a per-run session for the target workspace, and applies a blanket `{"permission":"*","pattern":"*","action":"allow"}` rule so tool calls do not block on prompts. That requires the `opencode` CLI to be installed and already configured with a usable model provider.
+`gnhf` supports four agents:
+
+| Agent       | Flag               | Requirements                                                               | Notes                                                                                                                                                                                                            |
+| ----------- | ------------------ | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude Code | `--agent claude`   | Install Anthropic's `claude` CLI and sign in first.                        | `gnhf` invokes `claude` directly in non-interactive mode.                                                                                                                                                        |
+| Codex       | `--agent codex`    | Install OpenAI's `codex` CLI and sign in first.                            | `gnhf` invokes `codex exec` directly in non-interactive mode.                                                                                                                                                    |
+| Rovo Dev    | `--agent rovodev`  | Install Atlassian's `acli` and authenticate it with Rovo Dev first.        | `gnhf` starts a local `acli rovodev serve --disable-session-token <port>` process automatically in the repo workspace.                                                                                           |
+| OpenCode    | `--agent opencode` | Install `opencode` and configure at least one usable model provider first. | `gnhf` starts a local `opencode serve --hostname 127.0.0.1 --port <port> --print-logs` process automatically, creates a per-run session, and applies a blanket allow rule so tool calls do not block on prompts. |
 
 ## Development
 
