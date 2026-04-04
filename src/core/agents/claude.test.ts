@@ -2,10 +2,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { EventEmitter } from "node:events";
 
 vi.mock("node:child_process", () => ({
+  execFileSync: vi.fn(),
   spawn: vi.fn(),
 }));
 
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { ClaudeAgent } from "./claude.js";
 
 const mockSpawn = vi.mocked(spawn);
@@ -15,6 +16,7 @@ function createMockProcess() {
     stdout: new EventEmitter(),
     stderr: new EventEmitter(),
     stdin: null,
+    kill: vi.fn(),
   });
   return proc as typeof proc & ReturnType<typeof spawn>;
 }
@@ -55,10 +57,129 @@ describe("ClaudeAgent", () => {
       ],
       {
         cwd: "/work/dir",
+        shell: false,
         stdio: ["ignore", "pipe", "pipe"],
         env: process.env,
       },
     );
+  });
+
+  it("does not use a shell for direct Windows launches", () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const windowsAgent = new ClaudeAgent({
+      platform: "win32",
+    });
+
+    windowsAgent.run("test prompt", "/work/dir");
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      "claude",
+      [
+        "-p",
+        "test prompt",
+        "--verbose",
+        "--output-format",
+        "stream-json",
+        "--json-schema",
+        expect.any(String),
+        "--dangerously-skip-permissions",
+      ],
+      {
+        cwd: "/work/dir",
+        shell: false,
+        stdio: ["ignore", "pipe", "pipe"],
+        env: process.env,
+      },
+    );
+  });
+
+  it("uses a shell on Windows for cmd wrapper paths", () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const windowsAgent = new ClaudeAgent({
+      bin: "C:\\tools\\claude.cmd",
+      platform: "win32",
+    });
+
+    windowsAgent.run("test prompt", "/work/dir");
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      "C:\\tools\\claude.cmd",
+      [
+        "-p",
+        "test prompt",
+        "--verbose",
+        "--output-format",
+        "stream-json",
+        "--json-schema",
+        expect.any(String),
+        "--dangerously-skip-permissions",
+      ],
+      {
+        cwd: "/work/dir",
+        shell: true,
+        stdio: ["ignore", "pipe", "pipe"],
+        env: process.env,
+      },
+    );
+  });
+
+  it("uses a shell on Windows when a bare override resolves to a cmd wrapper", () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    vi.mocked(execFileSync).mockReturnValue(
+      "C:\\tools\\claude-code-switch.cmd\r\n" as never,
+    );
+    const windowsAgent = new ClaudeAgent({
+      bin: "claude-code-switch",
+      platform: "win32",
+    });
+
+    windowsAgent.run("test prompt", "/work/dir");
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      "claude-code-switch",
+      [
+        "-p",
+        "test prompt",
+        "--verbose",
+        "--output-format",
+        "stream-json",
+        "--json-schema",
+        expect.any(String),
+        "--dangerously-skip-permissions",
+      ],
+      {
+        cwd: "/work/dir",
+        shell: true,
+        stdio: ["ignore", "pipe", "pipe"],
+        env: process.env,
+      },
+    );
+  });
+
+  it("kills the full process tree on Windows when aborted", async () => {
+    const proc = createMockProcess();
+    Object.defineProperty(proc, "pid", { value: 5678 });
+    mockSpawn.mockReturnValue(proc);
+    const controller = new AbortController();
+    const windowsAgent = new ClaudeAgent({
+      platform: "win32",
+    });
+
+    const promise = windowsAgent.run("test prompt", "/work/dir", {
+      signal: controller.signal,
+    });
+    controller.abort();
+
+    await expect(promise).rejects.toThrow("Agent was aborted");
+    expect(vi.mocked(execFileSync)).toHaveBeenCalledWith(
+      "taskkill",
+      ["/T", "/F", "/PID", "5678"],
+      { stdio: "ignore" },
+    );
+    expect(proc.kill).not.toHaveBeenCalled();
   });
 
   it("resolves with parsed output and usage on success", async () => {

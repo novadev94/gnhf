@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import type {
   Agent,
@@ -29,12 +29,71 @@ interface CodexTurnCompleted {
 
 type CodexEvent = CodexItemCompleted | CodexTurnCompleted | { type: string };
 
+interface CodexAgentDeps {
+  bin?: string;
+  platform?: NodeJS.Platform;
+}
+
+function shouldUseWindowsShell(
+  bin: string,
+  platform: NodeJS.Platform,
+): boolean {
+  if (platform !== "win32") {
+    return false;
+  }
+
+  if (/\.(cmd|bat)$/i.test(bin)) {
+    return true;
+  }
+
+  if (/[\\/]/.test(bin)) {
+    return false;
+  }
+
+  try {
+    const resolved = execFileSync("where", [bin], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const firstMatch = resolved
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find(Boolean);
+    return firstMatch ? /\.(cmd|bat)$/i.test(firstMatch) : false;
+  } catch {
+    return false;
+  }
+}
+
+function terminateCodexProcess(
+  child: ReturnType<typeof spawn>,
+  platform: NodeJS.Platform,
+): void {
+  if (platform === "win32" && child.pid) {
+    try {
+      execFileSync("taskkill", ["/T", "/F", "/PID", String(child.pid)], {
+        stdio: "ignore",
+      });
+    } catch {
+      // Best-effort: the process may have already exited.
+    }
+    return;
+  }
+
+  child.kill("SIGTERM");
+}
+
 export class CodexAgent implements Agent {
   name = "codex";
 
+  private bin: string;
+  private platform: NodeJS.Platform;
   private schemaPath: string;
 
-  constructor(schemaPath: string) {
+  constructor(schemaPath: string, binOrDeps: string | CodexAgentDeps = {}) {
+    const deps = typeof binOrDeps === "string" ? { bin: binOrDeps } : binOrDeps;
+    this.bin = deps.bin ?? "codex";
+    this.platform = deps.platform ?? process.platform;
     this.schemaPath = schemaPath;
   }
 
@@ -49,7 +108,7 @@ export class CodexAgent implements Agent {
       const logStream = logPath ? createWriteStream(logPath) : null;
 
       const child = spawn(
-        "codex",
+        this.bin,
         [
           "exec",
           prompt,
@@ -60,10 +119,21 @@ export class CodexAgent implements Agent {
           "--color",
           "never",
         ],
-        { cwd, stdio: ["ignore", "pipe", "pipe"], env: process.env },
+        {
+          cwd,
+          shell: shouldUseWindowsShell(this.bin, this.platform),
+          stdio: ["ignore", "pipe", "pipe"],
+          env: process.env,
+        },
       );
 
-      if (setupAbortHandler(signal, child, reject)) return;
+      if (
+        setupAbortHandler(signal, child, reject, () =>
+          terminateCodexProcess(child, this.platform),
+        )
+      ) {
+        return;
+      }
 
       let lastAgentMessage: string | null = null;
       const cumulative: TokenUsage = {
