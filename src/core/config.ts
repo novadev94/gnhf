@@ -10,6 +10,7 @@ const AGENT_NAMES = ["claude", "codex", "rovodev", "opencode"] as const;
 export interface Config {
   agent: AgentName;
   agentPathOverride: Partial<Record<AgentName, string>>;
+  agentArgsOverride: Partial<Record<AgentName, string[]>>;
   maxConsecutiveFailures: number;
   preventSleep: boolean;
 }
@@ -17,6 +18,7 @@ export interface Config {
 const DEFAULT_CONFIG: Config = {
   agent: "claude",
   agentPathOverride: {},
+  agentArgsOverride: {},
   maxConsecutiveFailures: 3,
   preventSleep: true,
 };
@@ -32,6 +34,45 @@ function normalizePreventSleep(value: unknown): boolean | undefined {
   if (value === "on") return true;
   if (value === "off") return false;
   return undefined;
+}
+
+function isReservedAgentArg(agent: AgentName, arg: string): boolean {
+  switch (agent) {
+    case "claude":
+      return (
+        arg === "-p" ||
+        arg === "--print" ||
+        arg === "--verbose" ||
+        arg === "--output-format" ||
+        arg.startsWith("--output-format=") ||
+        arg === "--json-schema" ||
+        arg.startsWith("--json-schema=")
+      );
+    case "codex":
+      return (
+        arg === "exec" ||
+        arg === "--json" ||
+        arg === "--output-schema" ||
+        arg.startsWith("--output-schema=") ||
+        arg === "--color" ||
+        arg.startsWith("--color=")
+      );
+    case "opencode":
+      return (
+        arg === "serve" ||
+        arg === "--hostname" ||
+        arg.startsWith("--hostname=") ||
+        arg === "--port" ||
+        arg.startsWith("--port=") ||
+        arg === "--print-logs"
+      );
+    case "rovodev":
+      return (
+        arg === "rovodev" ||
+        arg === "serve" ||
+        arg === "--disable-session-token"
+      );
+  }
 }
 
 /**
@@ -98,6 +139,76 @@ function normalizeAgentPathOverride(
   return result;
 }
 
+function normalizeAgentExtraArgs(
+  value: unknown,
+  label: string,
+  agent: AgentName,
+): string[] | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!Array.isArray(value)) {
+    throw new InvalidConfigError(
+      `Invalid config value for ${label}: expected an array of strings`,
+    );
+  }
+
+  return value.map((entry, index) => {
+    if (typeof entry !== "string") {
+      throw new InvalidConfigError(
+        `Invalid config value for ${label}[${index}]: expected a string`,
+      );
+    }
+
+    const trimmed = entry.trim();
+    if (trimmed === "") {
+      throw new InvalidConfigError(
+        `Invalid config value for ${label}[${index}]: expected a non-empty string`,
+      );
+    }
+
+    if (isReservedAgentArg(agent, trimmed)) {
+      throw new InvalidConfigError(
+        `Invalid config value for ${label}[${index}]: "${trimmed}" is managed by gnhf and cannot be overridden`,
+      );
+    }
+
+    return trimmed;
+  });
+}
+
+function normalizeAgentArgsOverride(
+  value: unknown,
+): Partial<Record<AgentName, string[]>> | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new InvalidConfigError(
+      `Invalid config value for agentArgsOverride: expected an object`,
+    );
+  }
+
+  const validNames = new Set<string>(AGENT_NAMES);
+  const result: Partial<Record<AgentName, string[]>> = {};
+
+  for (const [key, rawConfig] of Object.entries(
+    value as Record<string, unknown>,
+  )) {
+    if (!validNames.has(key)) {
+      throw new InvalidConfigError(
+        `Invalid agent name in agentArgsOverride: "${key}". Use "claude", "codex", "rovodev", or "opencode".`,
+      );
+    }
+    const args = normalizeAgentExtraArgs(
+      rawConfig,
+      `agentArgsOverride.${key}`,
+      key as AgentName,
+    );
+    if (args !== undefined) {
+      result[key as AgentName] = args;
+    }
+  }
+
+  return Object.keys(result).length === 0 ? undefined : result;
+}
+
 function normalizeConfig(
   config: Partial<Config>,
   configDir?: string,
@@ -139,6 +250,23 @@ function normalizeConfig(
     delete normalized.agentPathOverride;
   }
 
+  const hasAgentArgsOverride = Object.prototype.hasOwnProperty.call(
+    config,
+    "agentArgsOverride",
+  );
+  if (hasAgentArgsOverride) {
+    const agentArgsOverride = normalizeAgentArgsOverride(
+      config.agentArgsOverride,
+    );
+    if (agentArgsOverride === undefined) {
+      delete normalized.agentArgsOverride;
+    } else {
+      normalized.agentArgsOverride = agentArgsOverride;
+    }
+  } else {
+    delete normalized.agentArgsOverride;
+  }
+
   return normalized;
 }
 
@@ -171,9 +299,27 @@ function serializeAgentPathOverride(
     .trimEnd();
 }
 
+function serializeAgentArgsOverride(
+  agentArgsOverride: Partial<Record<AgentName, string[]>>,
+): string {
+  if (Object.keys(agentArgsOverride).length === 0) {
+    return "";
+  }
+
+  return yaml
+    .dump(
+      { agentArgsOverride },
+      { lineWidth: -1, noRefs: true, sortKeys: false },
+    )
+    .trimEnd();
+}
+
 function serializeConfig(config: Config): string {
   const agentPathOverrideSection = serializeAgentPathOverride(
     config.agentPathOverride,
+  );
+  const agentArgsOverrideSection = serializeAgentArgsOverride(
+    config.agentArgsOverride,
   );
   const lines = [
     "# Agent to use by default",
@@ -186,10 +332,23 @@ function serializeConfig(config: Config): string {
     "# agentPathOverride:",
     "#   claude: /path/to/custom-claude",
     "#   codex: /path/to/custom-codex",
+    "",
+    "# Per-agent CLI arg overrides (optional)",
+    "# agentArgsOverride:",
+    "#   codex:",
+    "#     - -m",
+    "#     - gpt-5.4",
+    "#     - -c",
+    '#     - model_reasoning_effort="high"',
+    "#     - --full-auto",
   ];
 
   if (agentPathOverrideSection) {
     lines.push(...agentPathOverrideSection.split("\n"));
+  }
+
+  if (agentArgsOverrideSection) {
+    lines.push(...agentArgsOverrideSection.split("\n"));
   }
 
   lines.push(

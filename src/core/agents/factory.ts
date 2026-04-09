@@ -10,15 +10,28 @@ export function createAgent(
   name: AgentName,
   runInfo: RunInfo,
   pathOverride?: string,
+  agentArgsOverride?: string[],
 ): Agent {
   switch (name) {
     case "claude":
-      return new ClaudeAgent(pathOverride);
+      return new ClaudeAgent({
+        bin: pathOverride,
+        extraArgs: agentArgsOverride,
+      });
     case "codex":
-      return new CodexAgent(runInfo.schemaPath, pathOverride);
+      return new CodexAgent(runInfo.schemaPath, {
+        bin: pathOverride,
+        extraArgs: agentArgsOverride,
+      });
     case "opencode":
-      return new OpenCodeAgent({ bin: pathOverride });
+      return new OpenCodeAgent({
+        bin: pathOverride,
+        extraArgs: agentArgsOverride,
+      });
     case "rovodev":
-      return new RovoDevAgent(runInfo.schemaPath, { bin: pathOverride });
+      return new RovoDevAgent(runInfo.schemaPath, {
+        bin: pathOverride,
+        extraArgs: agentArgsOverride,
+      });
   }
 }

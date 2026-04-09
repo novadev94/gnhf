@@ -223,12 +223,18 @@ describe("cli", () => {
     const { loadConfig, createAgent } = await runCliWithMocks(["ship it"], {
       agent: "codex",
       agentPathOverride: {},
+      agentArgsOverride: {},
       maxConsecutiveFailures: 3,
       preventSleep: false,
     });
 
     expect(loadConfig).toHaveBeenCalledWith({});
-    expect(createAgent).toHaveBeenCalledWith("codex", stubRunInfo, undefined);
+    expect(createAgent).toHaveBeenCalledWith(
+      "codex",
+      stubRunInfo,
+      undefined,
+      undefined,
+    );
   });
 
   it("uses the explicit --agent flag as an override", async () => {
@@ -237,13 +243,19 @@ describe("cli", () => {
       {
         agent: "claude",
         agentPathOverride: {},
+        agentArgsOverride: {},
         maxConsecutiveFailures: 3,
         preventSleep: false,
       },
     );
 
     expect(loadConfig).toHaveBeenCalledWith({ agent: "claude" });
-    expect(createAgent).toHaveBeenCalledWith("claude", stubRunInfo, undefined);
+    expect(createAgent).toHaveBeenCalledWith(
+      "claude",
+      stubRunInfo,
+      undefined,
+      undefined,
+    );
   });
 
   it("accepts rovodev as an explicit --agent override", async () => {
@@ -252,13 +264,19 @@ describe("cli", () => {
       {
         agent: "rovodev",
         agentPathOverride: {},
+        agentArgsOverride: {},
         maxConsecutiveFailures: 3,
         preventSleep: false,
       },
     );
 
     expect(loadConfig).toHaveBeenCalledWith({ agent: "rovodev" });
-    expect(createAgent).toHaveBeenCalledWith("rovodev", stubRunInfo, undefined);
+    expect(createAgent).toHaveBeenCalledWith(
+      "rovodev",
+      stubRunInfo,
+      undefined,
+      undefined,
+    );
   });
 
   it("accepts opencode as an explicit --agent override", async () => {
@@ -267,6 +285,7 @@ describe("cli", () => {
       {
         agent: "opencode",
         agentPathOverride: {},
+        agentArgsOverride: {},
         maxConsecutiveFailures: 3,
         preventSleep: false,
       },
@@ -277,7 +296,26 @@ describe("cli", () => {
       "opencode",
       stubRunInfo,
       undefined,
+      undefined,
     );
+  });
+
+  it("passes per-agent config through to agent creation", async () => {
+    const { createAgent } = await runCliWithMocks(["ship it"], {
+      agent: "codex",
+      agentPathOverride: {},
+      agentArgsOverride: {
+        codex: ["-m", "gpt-5.4", "--full-auto"],
+      },
+      maxConsecutiveFailures: 3,
+      preventSleep: false,
+    });
+
+    expect(createAgent).toHaveBeenCalledWith("codex", stubRunInfo, undefined, [
+      "-m",
+      "gpt-5.4",
+      "--full-auto",
+    ]);
   });
 
   it("passes max iteration and token caps to the orchestrator", async () => {
@@ -286,6 +324,7 @@ describe("cli", () => {
       {
         agent: "claude",
         agentPathOverride: {},
+        agentArgsOverride: {},
         maxConsecutiveFailures: 3,
         preventSleep: false,
       },
@@ -303,6 +342,7 @@ describe("cli", () => {
       await runCliWithMocks(["ship it", "--prevent-sleep", "off"], {
         agent: "claude",
         agentPathOverride: {},
+        agentArgsOverride: {},
         maxConsecutiveFailures: 3,
         preventSleep: false,
       });
@@ -313,6 +353,7 @@ describe("cli", () => {
     expect(orchestratorCtor.mock.calls[0]?.[0]).toEqual({
       agent: "claude",
       agentPathOverride: {},
+      agentArgsOverride: {},
       maxConsecutiveFailures: 3,
       preventSleep: false,
     });
@@ -330,6 +371,7 @@ describe("cli", () => {
         {
           agent: "claude",
           agentPathOverride: {},
+          agentArgsOverride: {},
           maxConsecutiveFailures: 3,
           preventSleep: true,
         },
@@ -362,6 +404,7 @@ describe("cli", () => {
       {
         agent: "claude",
         agentPathOverride: {},
+        agentArgsOverride: {},
         maxConsecutiveFailures: 3,
         preventSleep: true,
       },
@@ -396,6 +439,7 @@ describe("cli", () => {
         {
           agent: "claude",
           agentPathOverride: {},
+          agentArgsOverride: {},
           maxConsecutiveFailures: 3,
           preventSleep: true,
         },
@@ -435,6 +479,7 @@ describe("cli", () => {
       {
         agent: "claude",
         agentPathOverride: {},
+        agentArgsOverride: {},
         maxConsecutiveFailures: 3,
         preventSleep: true,
       },
@@ -476,6 +521,7 @@ describe("cli", () => {
         {
           agent: "claude",
           agentPathOverride: {},
+          agentArgsOverride: {},
           maxConsecutiveFailures: 3,
           preventSleep: true,
         },
@@ -511,6 +557,7 @@ describe("cli", () => {
         {
           agent: "claude",
           agentPathOverride: {},
+          agentArgsOverride: {},
           maxConsecutiveFailures: 3,
           preventSleep: true,
         },
@@ -541,6 +588,7 @@ describe("cli", () => {
     const loadConfig = vi.fn(() => ({
       agent: "claude" as const,
       agentPathOverride: {},
+      agentArgsOverride: {},
       maxConsecutiveFailures: 3,
       preventSleep: true,
     }));
@@ -678,6 +726,7 @@ describe("cli", () => {
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
+        agentArgsOverride: {},
         maxConsecutiveFailures: 3,
         preventSleep: true,
       })),
@@ -753,6 +802,7 @@ describe("cli", () => {
       {
         agent: "claude",
         agentPathOverride: {},
+        agentArgsOverride: {},
         maxConsecutiveFailures: 3,
         preventSleep: false,
       },
@@ -789,6 +839,7 @@ describe("cli", () => {
       {
         agent: "opencode",
         agentPathOverride: {},
+        agentArgsOverride: {},
         maxConsecutiveFailures: 3,
         preventSleep: false,
       },
@@ -827,6 +878,7 @@ describe("cli", () => {
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
+        agentArgsOverride: {},
         maxConsecutiveFailures: 3,
         preventSleep: false,
       })),
@@ -902,6 +954,7 @@ describe("cli", () => {
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
+        agentArgsOverride: {},
         maxConsecutiveFailures: 3,
         preventSleep: false,
       })),
@@ -995,6 +1048,7 @@ describe("cli", () => {
       loadConfig: vi.fn(() => ({
         agent: "claude",
         agentPathOverride: {},
+        agentArgsOverride: {},
         maxConsecutiveFailures: 3,
         preventSleep: false,
       })),
