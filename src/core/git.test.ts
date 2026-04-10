@@ -13,6 +13,9 @@ import {
   getBranchCommitCount,
   getCurrentBranch,
   resetHard,
+  getRepoRootDir,
+  createWorktree,
+  removeWorktree,
 } from "./git.js";
 
 const mockExecSync = vi.mocked(execSync);
@@ -254,6 +257,45 @@ describe("git utilities", () => {
         encoding: "utf-8",
         stdio: "pipe",
       });
+    });
+  });
+
+  describe("getRepoRootDir", () => {
+    it("returns the repo root directory", () => {
+      mockExecSync.mockImplementation((cmd) => {
+        if (cmd === "git rev-parse --git-dir") return ".git\n";
+        if (cmd === "git rev-parse --show-toplevel") return "/my/repo\n";
+        return "";
+      });
+      expect(getRepoRootDir("/my/repo/sub")).toBe("/my/repo");
+    });
+  });
+
+  describe("createWorktree", () => {
+    it("calls git worktree add with branch and path", () => {
+      createWorktree("/repo", "/tmp/wt", "gnhf/my-branch");
+      expect(mockExecSync).toHaveBeenCalledWith(
+        "git worktree add -b 'gnhf/my-branch' '/tmp/wt'",
+        {
+          cwd: "/repo",
+          encoding: "utf-8",
+          stdio: "pipe",
+        },
+      );
+    });
+  });
+
+  describe("removeWorktree", () => {
+    it("calls git worktree remove --force", () => {
+      removeWorktree("/repo", "/tmp/wt");
+      expect(mockExecSync).toHaveBeenCalledWith(
+        "git worktree remove --force '/tmp/wt'",
+        {
+          cwd: "/repo",
+          encoding: "utf-8",
+          stdio: "pipe",
+        },
+      );
     });
   });
 });

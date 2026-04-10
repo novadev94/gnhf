@@ -242,6 +242,122 @@ describe("gnhf e2e", () => {
     expect(git(["rev-list", "--count", "HEAD"], cwd)).toBe("3");
   }, 30_000);
 
+  it.skipIf(process.platform === "win32")("runs one iteration in --worktree mode and preserves the worktree with commits", async () => {
+    const cwd = createRepo();
+    tempDirs.push(cwd);
+    const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-logs-"));
+    tempDirs.push(logDir);
+    const mockLogPath = join(logDir, "mock-opencode.jsonl");
+    const worktreeParent = `${cwd}-gnhf-worktrees`;
+    tempDirs.push(worktreeParent);
+
+    const result = await runCli(
+      cwd,
+      ["worktree test", "--agent", "opencode", "--max-iterations", "1", "--worktree"],
+      {
+        env: {
+          ...process.env,
+          PATH: `${fixtureBinDir}${process.platform === "win32" ? ";" : ":"}${process.env.PATH ?? ""}`,
+          GNHF_MOCK_OPENCODE_LOG_PATH: mockLogPath,
+        },
+      },
+    );
+
+    expect(result.code).toBe(0);
+
+    // Original repo should still be on main with no extra commits
+    expect(git(["rev-parse", "--abbrev-ref", "HEAD"], cwd)).toBe("main");
+    expect(git(["rev-list", "--count", "HEAD"], cwd)).toBe("1");
+
+    // Worktree directory should exist and contain the gnhf branch
+    expect(existsSync(worktreeParent)).toBe(true);
+    const worktreeDirs = readdirSync(worktreeParent);
+    expect(worktreeDirs.length).toBe(1);
+    const worktreePath = join(worktreeParent, worktreeDirs[0]!);
+
+    // The worktree should be on a gnhf/* branch with the agent's commit
+    const wtBranch = git(["rev-parse", "--abbrev-ref", "HEAD"], worktreePath);
+    expect(wtBranch).toMatch(/^gnhf\//);
+    const wtCommitCount = git(["rev-list", "--count", "HEAD"], worktreePath);
+    expect(Number(wtCommitCount)).toBeGreaterThanOrEqual(2); // init + agent commit
+
+    // The commit message should follow gnhf format
+    expect(git(["log", "-1", "--format=%s"], worktreePath)).toContain("gnhf #1:");
+
+    // Debug log should record worktree info
+    const debugLogPath = join(worktreePath, ".gnhf", "runs", worktreeDirs[0]!, "gnhf.log");
+    const debugEvents = readJsonLines(debugLogPath);
+    const startEvent = debugEvents.find((e) => e.event === "run:start");
+    expect(startEvent?.worktree).toBe(true);
+    expect(startEvent?.worktreePath).toContain(worktreeParent);
+
+    // Stderr should mention that the worktree was preserved
+    expect(result.stderr).toContain("worktree preserved");
+  }, 30_000);
+
+  it.skipIf(process.platform === "win32")("cleans up the worktree when no changes are made in --worktree mode", async () => {
+    const cwd = createRepo();
+    tempDirs.push(cwd);
+    const logDir = mkdtempSync(join(tmpdir(), "gnhf-e2e-logs-"));
+    tempDirs.push(logDir);
+    const mockLogPath = join(logDir, "mock-opencode.jsonl");
+    const worktreeParent = `${cwd}-gnhf-worktrees`;
+    // Register for cleanup in case test fails and worktree isn't removed
+    tempDirs.push(worktreeParent);
+
+    // The "slow cleanup" prompt triggers special behavior in the mock opencode
+    // server: when it detects "slow cleanup" in the prompt text, the message
+    // handler deliberately never sends a response (it only listens for the
+    // request to close). This simulates a long-running agent that hasn't
+    // produced any commits. We then send SIGINT to trigger graceful shutdown,
+    // which should cause gnhf to clean up the worktree (0 commits = auto-remove).
+    const child = spawn(
+      process.execPath,
+      [distCliPath, "slow cleanup", "--agent", "opencode", "--worktree"],
+      {
+        cwd,
+        env: {
+          ...process.env,
+          PATH: `${fixtureBinDir}${process.platform === "win32" ? ";" : ":"}${process.env.PATH ?? ""}`,
+          GNHF_MOCK_OPENCODE_LOG_PATH: mockLogPath,
+        },
+        stdio: ["pipe", "pipe", "pipe"],
+      },
+    );
+    child.stdin.end();
+
+    const exitPromise = new Promise<RunResult>((resolveResult, reject) => {
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (chunk) => {
+        stdout += chunk.toString();
+      });
+      child.stderr.on("data", (chunk) => {
+        stderr += chunk.toString();
+      });
+      child.on("error", reject);
+      child.on("close", (code, signal) => {
+        resolveResult({ code, signal, stdout, stderr });
+      });
+    });
+
+    // Wait for the mock server to start and receive the message
+    await waitForLogEvent(mockLogPath, "message:start");
+    child.kill("SIGINT");
+
+    const sigintResult = await exitPromise;
+    expect(sigintResult.code).toBe(130);
+
+    // Original repo should still be on main
+    expect(git(["rev-parse", "--abbrev-ref", "HEAD"], cwd)).toBe("main");
+
+    // Worktree should have been cleaned up (no commits were made)
+    if (existsSync(worktreeParent)) {
+      const remaining = readdirSync(worktreeParent);
+      expect(remaining.length).toBe(0);
+    }
+  }, 30_000);
+
   // Windows has no POSIX signals; child.kill("SIGINT") force-terminates the
   // process tree without triggering the graceful shutdown path this test covers.
   it.skipIf(process.platform === "win32")("shuts down the agent server when gnhf receives SIGINT", async () => {

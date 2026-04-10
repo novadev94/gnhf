@@ -19,6 +19,11 @@ function git(args: string, cwd: string): string {
   }
 }
 
+/** Wrap a value in single quotes, escaping embedded single quotes for POSIX shells. */
+function shellEscape(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
 function isGitRepository(cwd: string): boolean {
   try {
     execSync("git rev-parse --git-dir", {
@@ -117,4 +122,23 @@ export function commitAll(message: string, cwd: string): void {
 export function resetHard(cwd: string): void {
   git("reset --hard HEAD", cwd);
   git("clean -fd", cwd);
+}
+
+export function getRepoRootDir(cwd: string): string {
+  return git("rev-parse --show-toplevel", cwd);
+}
+
+export function createWorktree(
+  baseCwd: string,
+  worktreePath: string,
+  branchName: string,
+): void {
+  git(
+    `worktree add -b ${shellEscape(branchName)} ${shellEscape(worktreePath)}`,
+    baseCwd,
+  );
+}
+
+export function removeWorktree(baseCwd: string, worktreePath: string): void {
+  git(`worktree remove --force ${shellEscape(worktreePath)}`, baseCwd);
 }
