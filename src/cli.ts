@@ -338,6 +338,9 @@ program
           mock as unknown as Orchestrator,
           "let's minimize app startup latency without sacrificing any functionality",
           "claude",
+          () => {
+            mock.handleInterrupt();
+          },
         );
         renderer.start();
         mock.start();
@@ -570,26 +573,54 @@ program
         },
       );
       let shutdownSignal: NodeJS.Signals | null = null;
+      let forceShutdownRequested = false;
 
-      enterAltScreen();
-      const renderer = new Renderer(orchestrator, prompt, config.agent);
-      renderer.start();
-
-      const requestShutdown = (signal: NodeJS.Signals) => {
-        if (shutdownSignal) return;
+      const requestForceShutdown = (signal: NodeJS.Signals) => {
+        if (forceShutdownRequested) return;
+        forceShutdownRequested = true;
         shutdownSignal = signal;
         appendDebugLog(`signal:${signal}`);
         renderer.stop();
-        orchestrator.stop();
       };
-      const handleSigInt = () => requestShutdown("SIGINT");
-      const handleSigTerm = () => requestShutdown("SIGTERM");
+      const handleSigInt = () => {
+        const disposition = orchestrator.handleInterrupt();
+        if (disposition === "force-stop") {
+          requestForceShutdown("SIGINT");
+          return;
+        }
+        if (disposition === "exit") {
+          shutdownSignal = "SIGINT";
+          appendDebugLog("signal:SIGINT");
+          renderer.stop("interrupted");
+          return;
+        }
+        shutdownSignal = "SIGINT";
+        appendDebugLog("signal:SIGINT");
+      };
+      const handleSigTerm = () => {
+        orchestrator.stop();
+        requestForceShutdown("SIGTERM");
+      };
+
+      enterAltScreen();
+      const renderer = new Renderer(
+        orchestrator,
+        prompt,
+        config.agent,
+        handleSigInt,
+      );
+      renderer.start();
+
       process.on("SIGINT", handleSigInt);
       process.on("SIGTERM", handleSigTerm);
 
       const orchestratorPromise = orchestrator
         .start()
         .finally(() => {
+          // Only aborted runs keep the done screen open. Graceful stops should
+          // exit as soon as the current iteration and shutdown cleanup finish,
+          // but a real abort still deserves the done screen even if a prior
+          // ctrl+c already set the eventual SIGINT exit code.
           const keepTui =
             orchestrator.getState().status === "aborted" && process.stdin.isTTY;
           if (!keepTui) {
