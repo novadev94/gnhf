@@ -274,6 +274,79 @@ describe("Orchestrator stop limits", () => {
     vi.useRealTimers();
   });
 
+  it("does not publish blank structured JSON as the visible TUI message", async () => {
+    const agent: Agent = {
+      name: "codex",
+      run: vi.fn(async (_prompt, _cwd, options) => {
+        options?.onMessage?.("working on files");
+        options?.onMessage?.(
+          JSON.stringify({
+            success: false,
+            summary: "",
+            key_changes_made: [],
+            key_learnings: [],
+            should_fully_stop: false,
+          }),
+        );
+        return createSuccessResult();
+      }),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxIterations: 1 },
+    );
+    const messages: Array<string | null> = [];
+    orchestrator.on("state", (state) => {
+      messages.push(state.lastMessage);
+    });
+
+    await orchestrator.start();
+
+    expect(messages).toContain("working on files");
+    expect(messages).not.toContain(
+      '{"success":false,"summary":"","key_changes_made":[],"key_learnings":[],"should_fully_stop":false}',
+    );
+  });
+
+  it("publishes non-blank structured JSON as the visible TUI message", async () => {
+    const structuredMessage = JSON.stringify({
+      success: false,
+      summary: "Scanning target scope.",
+      key_changes_made: [],
+      key_learnings: [],
+      should_fully_stop: false,
+    });
+    const agent: Agent = {
+      name: "codex",
+      run: vi.fn(async (_prompt, _cwd, options) => {
+        options?.onMessage?.(structuredMessage);
+        return createSuccessResult();
+      }),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxIterations: 1 },
+    );
+    const messages: Array<string | null> = [];
+    orchestrator.on("state", (state) => {
+      messages.push(state.lastMessage);
+    });
+
+    await orchestrator.start();
+
+    expect(messages).toContain(structuredMessage);
+  });
+
   it("aborts before starting when the max iteration cap is already reached", async () => {
     const agent: Agent = {
       name: "claude",

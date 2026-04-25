@@ -77,6 +77,26 @@ type RunIterationResult =
   | { type: "stopped" }
   | { type: "aborted"; reason: string };
 
+function isBlankStructuredAgentOutput(text: string): boolean {
+  try {
+    const value = JSON.parse(text) as Partial<AgentOutput>;
+    return (
+      value !== null &&
+      typeof value === "object" &&
+      value.success === false &&
+      value.summary === "" &&
+      Array.isArray(value.key_changes_made) &&
+      value.key_changes_made.length === 0 &&
+      Array.isArray(value.key_learnings) &&
+      value.key_learnings.length === 0 &&
+      (value.should_fully_stop === undefined ||
+        value.should_fully_stop === false)
+    );
+  } catch {
+    return false;
+  }
+}
+
 export class Orchestrator extends EventEmitter<OrchestratorEvents> {
   private config: Config;
   private agent: Agent;
@@ -414,6 +434,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
     };
 
     const onMessage = (text: string) => {
+      if (isBlankStructuredAgentOutput(text)) return;
       this.state.lastMessage = text;
       this.emit("state", this.getState());
     };
