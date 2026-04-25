@@ -197,7 +197,7 @@ export function setupRun(
   if (!existsSync(notesPath)) {
     writeFileSync(
       notesPath,
-      `# gnhf run: ${runId}\n\nObjective: see .gnhf/runs/${runId}/prompt.md\n\n## Iteration Log\n`,
+      `# gnhf run: ${runId}\n\n## Iteration Log\n`,
       "utf-8",
     );
   }

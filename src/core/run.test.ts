@@ -89,7 +89,7 @@ describe("setupRun", () => {
     );
   });
 
-  it("writes notes.md with header that points at prompt.md instead of inlining the prompt", () => {
+  it("writes notes.md with header without duplicating or linking the prompt", () => {
     setupRun("run-abc", "improve coverage", "abc123", P, {
       includeStopField: false,
     });
@@ -99,7 +99,7 @@ describe("setupRun", () => {
     expect(notesCall).toBeDefined();
     const content = notesCall![1] as string;
     expect(content).toContain("# gnhf run: run-abc");
-    expect(content).toContain(".gnhf/runs/run-abc/prompt.md");
+    expect(content).not.toContain("prompt.md");
     expect(content).not.toContain("improve coverage");
     expect(content).toContain("## Iteration Log");
   });
