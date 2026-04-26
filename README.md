@@ -106,7 +106,7 @@ npm link
                            ▼
               ┌────────────────────────────┐
               │  build iteration prompt    │◄──────────────┐
-              │  (inject notes.md context) │               │
+              │  (reference notes.md info) │               │
               └────────────┬───────────────┘               │
                            ▼                               │
               ┌────────────────────────────┐               │
@@ -183,6 +183,7 @@ If you run `gnhf` on an existing `gnhf/` branch with a different prompt, gnhf as
 | `--stop-when <cond>`     | End the loop when the agent reports this condition; persists across resume                  | unlimited              |
 | `--prevent-sleep <mode>` | Prevent system sleep during the run (`on`/`off` or `true`/`false`)                          | config file (`on`)     |
 | `--worktree`             | Run in a separate git worktree (enables multiple agents concurrently)                       | `false`                |
+| `--original`             | Use the original smaller-step iteration prompt                                              | `false`                |
 | `--version`              | Show version                                                                                |                        |
 
 ## Configuration

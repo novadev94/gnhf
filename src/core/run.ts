@@ -44,6 +44,11 @@ export interface RunMetadata {
   commitMessage: CommitMessageConfig | undefined;
 }
 
+export interface NotesMetadata {
+  lineCount: number;
+  wordCount: number;
+}
+
 const LOG_FILENAME = "gnhf.log";
 const STOP_WHEN_FILENAME = "stop-when";
 const COMMIT_MESSAGE_FILENAME = "commit-message";
@@ -197,7 +202,7 @@ export function setupRun(
   if (!existsSync(notesPath)) {
     writeFileSync(
       notesPath,
-      `run: ${runId}\nformat: entry=iteration. C=change. L=learning.\n`,
+      `run: ${runId}\nformat: N: summary | + change | ? learning\n`,
       "utf-8",
     );
   }
@@ -357,15 +362,50 @@ export function toStringArray(value: unknown): string[] {
 
 function formatTaggedLines(tag: string, items: string[]): string {
   if (items.length === 0) return "";
-  return `${items.map((item) => `${tag}: ${item}`).join("\n")}\n`;
+  return `${items.map((item) => `${tag} ${item}`).join("\n")}\n`;
+}
+
+function normalizeNoteLineForComparison(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/[.!?;:]+$/g, "");
+}
+
+function cleanupNoteItems(
+  items: string[],
+  summary?: string,
+  seen: Set<string> = new Set<string>(),
+): string[] {
+  const normalizedSummary =
+    summary === undefined ? undefined : normalizeNoteLineForComparison(summary);
+  const cleaned: string[] = [];
+
+  for (const item of items) {
+    const trimmed = item.trim();
+    if (trimmed === "") continue;
+
+    const normalized = normalizeNoteLineForComparison(trimmed);
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+
+    if (normalizedSummary !== undefined && normalized === normalizedSummary) {
+      continue;
+    }
+
+    cleaned.push(trimmed);
+  }
+
+  return cleaned;
 }
 
 function formatIterationHeading(iteration: number, summary: string): string {
   const status = summary.match(/^\[(FAIL|ERROR)\](?:\s+(.+))?$/);
   if (status) {
     return status[2]
-      ? `${iteration} [${status[1].toLowerCase()}]: ${status[2]}`
-      : `${iteration} [${status[1].toLowerCase()}]`;
+      ? `${iteration}: [${status[1].toLowerCase()}] ${status[2]}`
+      : `${iteration}: [${status[1].toLowerCase()}]`;
   }
   return `${iteration}: ${summary}`;
 }
@@ -377,11 +417,34 @@ export function appendNotes(
   changes: string[],
   learnings: string[],
 ): void {
+  // Notes concision should be semantic, not quota-based. Avoid exact word/item
+  // caps; prefer filtering recap, obvious context, and non-future-use detail.
+  const cleanedSummary = summary.trim();
+  const seenNotes = new Set<string>();
+  const cleanedChanges = cleanupNoteItems(
+    changes,
+    cleanedSummary,
+    seenNotes,
+  );
+  const cleanedLearnings = cleanupNoteItems(
+    learnings,
+    cleanedSummary,
+    seenNotes,
+  );
   const entry = [
-    `\n${formatIterationHeading(iteration, summary)}\n`,
-    formatTaggedLines("C", changes),
-    formatTaggedLines("L", learnings),
+    `\n${formatIterationHeading(iteration, cleanedSummary)}\n`,
+    formatTaggedLines("+", cleanedChanges),
+    formatTaggedLines("?", cleanedLearnings),
   ].join("");
 
   appendFileSync(notesPath, entry, "utf-8");
+}
+
+export function getNotesMetadata(notesPath: string): NotesMetadata {
+  const notes = readFileSync(notesPath, "utf-8");
+  const trimmed = notes.trim();
+  return {
+    lineCount: notes === "" ? 0 : notes.trimEnd().split(/\r?\n/).length,
+    wordCount: trimmed === "" ? 0 : trimmed.split(/\s+/).length,
+  };
 }

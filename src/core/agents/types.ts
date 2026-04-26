@@ -91,10 +91,22 @@ export function buildAgentOutputSchema(opts: {
   commitFields?: AgentOutputCommitField[];
 }): AgentOutputSchema {
   const properties: AgentOutputSchema["properties"] = {
-    success: { type: "boolean" },
-    summary: { type: "string" },
-    key_changes_made: { type: "array", items: { type: "string" } },
-    key_learnings: { type: "array", items: { type: "string" } },
+    success: {
+      type: "boolean",
+    },
+    summary: {
+      type: "string",
+    },
+    key_changes_made: {
+      type: "array",
+      items: {
+        type: "string",
+      },
+    },
+    key_learnings: {
+      type: "array",
+      items: { type: "string" },
+    },
   };
   const required = ["success", "summary", "key_changes_made", "key_learnings"];
   for (const field of opts.commitFields ?? []) {
@@ -105,7 +117,9 @@ export function buildAgentOutputSchema(opts: {
     required.push(field.name);
   }
   if (opts.includeStopField) {
-    properties.should_fully_stop = { type: "boolean" };
+    properties.should_fully_stop = {
+      type: "boolean",
+    };
     required.push("should_fully_stop");
   }
   return {

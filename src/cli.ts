@@ -480,6 +480,7 @@ program
     "Run in a separate git worktree (enables multiple agents on the same repo)",
     false,
   )
+  .option("--original", "Use the original iteration prompt", false)
   .option("--mock", "", false)
   .action(
     async (
@@ -491,6 +492,7 @@ program
         stopWhen?: string;
         preventSleep?: boolean;
         worktree: boolean;
+        original: boolean;
         mock: boolean;
       },
     ) => {
@@ -789,6 +791,7 @@ program
         agentArgsOverride: getNativeAgentName(config.agent)
           ? config.agentArgsOverride?.[getNativeAgentName(config.agent)!]
           : undefined,
+        originalPrompt: options.original,
         worktree: options.worktree,
         worktreePath,
         platform: process.platform,
@@ -818,6 +821,7 @@ program
           maxIterations: options.maxIterations,
           maxTokens: options.maxTokens,
           stopWhen: effectiveStopWhen,
+          ...(options.original ? { originalPrompt: true } : {}),
         },
       );
       let shutdownSignal: NodeJS.Signals | null = null;

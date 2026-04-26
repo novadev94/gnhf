@@ -32,6 +32,7 @@ vi.mock("../templates/iteration-prompt.js", () => ({
 
 import { commitAll, resetHard } from "./git.js";
 import { appendNotes } from "./run.js";
+import { buildIterationPrompt } from "../templates/iteration-prompt.js";
 import { Orchestrator } from "./orchestrator.js";
 import {
   PermanentAgentError,
@@ -45,6 +46,7 @@ import type { RunInfo } from "./run.js";
 const mockCommitAll = vi.mocked(commitAll);
 const mockAppendNotes = vi.mocked(appendNotes);
 const mockResetHard = vi.mocked(resetHard);
+const mockBuildIterationPrompt = vi.mocked(buildIterationPrompt);
 
 const config: Config = {
   agent: "claude",
@@ -265,6 +267,57 @@ describe("Orchestrator output normalization", () => {
     );
     expect(mockCommitAll).toHaveBeenCalledTimes(1);
     expect(orchestrator.getState().status).toBe("aborted");
+  });
+});
+
+describe("Orchestrator prompt variants", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useRealTimers();
+  });
+
+  it("uses the enhanced iteration prompt by default", async () => {
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(async () => createSuccessResult()),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxIterations: 1 },
+    );
+
+    await orchestrator.start();
+
+    expect(mockBuildIterationPrompt).toHaveBeenCalledWith(
+      expect.objectContaining({ original: undefined }),
+    );
+  });
+
+  it("uses the original iteration prompt when requested", async () => {
+    const agent: Agent = {
+      name: "claude",
+      run: vi.fn(async () => createSuccessResult()),
+    };
+    const orchestrator = new Orchestrator(
+      config,
+      agent,
+      runInfo,
+      "ship it",
+      "/repo",
+      0,
+      { maxIterations: 1, originalPrompt: true },
+    );
+
+    await orchestrator.start();
+
+    expect(mockBuildIterationPrompt).toHaveBeenCalledWith(
+      expect.objectContaining({ original: true }),
+    );
   });
 });
 

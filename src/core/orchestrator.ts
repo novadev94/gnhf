@@ -8,7 +8,7 @@ import {
 } from "./agents/types.js";
 import type { Config } from "./config.js";
 import type { RunInfo } from "./run.js";
-import { appendNotes, toStringArray } from "./run.js";
+import { appendNotes, getNotesMetadata, toStringArray } from "./run.js";
 import { appendDebugLog, serializeError } from "./debug-log.js";
 import {
   commitAll,
@@ -68,6 +68,7 @@ export interface RunLimits {
   maxIterations?: number;
   maxTokens?: number;
   stopWhen?: string;
+  originalPrompt?: boolean;
 }
 
 const STOP_CLOSE_AGENT_GRACE_MS = 250;
@@ -273,8 +274,10 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
           n: this.state.currentIteration,
           runId: this.runInfo.runId,
           prompt: this.prompt,
+          notesMetadata: getNotesMetadata(this.runInfo.notesPath),
           stopWhen: this.limits.stopWhen,
           commitMessage: this.config.commitMessage,
+          original: this.limits.originalPrompt,
         });
 
         appendDebugLog("iteration:start", {

@@ -889,6 +889,27 @@ describe("cli", () => {
     });
   });
 
+  it("passes --original to the orchestrator as a runtime prompt variant", async () => {
+    const { orchestratorCtor } = await runCliWithMocks(
+      ["ship it", "--original"],
+      {
+        agent: "claude",
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      },
+    );
+
+    expect(orchestratorCtor).toHaveBeenCalledTimes(1);
+    expect(orchestratorCtor.mock.calls[0]?.[6]).toEqual({
+      maxIterations: undefined,
+      maxTokens: undefined,
+      stopWhen: undefined,
+      originalPrompt: true,
+    });
+  });
+
   it("treats --prevent-sleep as a runtime override without passing it to config bootstrap", async () => {
     const { loadConfig, orchestratorCtor, startSleepPrevention } =
       await runCliWithMocks(["ship it", "--prevent-sleep", "off"], {
