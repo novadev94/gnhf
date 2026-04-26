@@ -52,6 +52,16 @@ describe("buildIterationPrompt", () => {
     expect(result).toContain("stopped any background processes");
   });
 
+  it("asks agents to keep structured output terse", () => {
+    const result = buildIterationPrompt({
+      n: 1,
+      runId: "run-1",
+      prompt: "test",
+    });
+    expect(result).toContain("Keep output ultra-concise");
+    expect(result).toContain("No filler, edit narration, or validation chores");
+  });
+
   it("produces a prompt identical to the default when stopWhen is not set", () => {
     const baseline = buildIterationPrompt({
       n: 1,

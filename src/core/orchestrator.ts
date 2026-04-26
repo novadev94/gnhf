@@ -536,7 +536,7 @@ export class Orchestrator extends EventEmitter<OrchestratorEvents> {
       const summary = err instanceof Error ? err.message : String(err);
       return {
         type: "completed",
-        record: this.recordFailure(`[ERROR] ${summary}`, summary, [], "error"),
+        record: this.recordFailure("[ERROR]", summary, [], "error"),
         shouldFullyStop: false,
       };
     } finally {

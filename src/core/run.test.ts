@@ -98,10 +98,11 @@ describe("setupRun", () => {
     );
     expect(notesCall).toBeDefined();
     const content = notesCall![1] as string;
-    expect(content).toContain("# gnhf run: run-abc");
+    expect(content).toContain("run: run-abc");
+    expect(content).toContain("format: entry=iteration. C=change. L=learning.");
     expect(content).not.toContain("prompt.md");
     expect(content).not.toContain("improve coverage");
-    expect(content).toContain("## Iteration Log");
+    expect(content).not.toContain("Iteration Log");
   });
 
   it("writes output-schema.json with valid JSON schema", () => {
@@ -543,35 +544,44 @@ describe("appendNotes", () => {
   it("appends iteration header and summary", () => {
     appendNotes("/notes.md", 3, "Added tests", [], []);
     const content = mockAppendFileSync.mock.calls[0][1] as string;
-    expect(content).toContain("### Iteration 3");
-    expect(content).toContain("**Summary:** Added tests");
+    expect(content).toBe("\n3: Added tests\n");
+  });
+
+  it("renders failure status in the compact heading", () => {
+    appendNotes("/notes.md", 7, "[FAIL] Added tests", [], []);
+    const content = mockAppendFileSync.mock.calls[0][1] as string;
+    expect(content).toBe("\n7 [fail]: Added tests\n");
+  });
+
+  it("renders bare error status in the compact heading", () => {
+    appendNotes("/notes.md", 27, "[ERROR]", [], []);
+    const content = mockAppendFileSync.mock.calls[0][1] as string;
+    expect(content).toBe("\n27 [error]\n");
   });
 
   it("includes changes when provided", () => {
     appendNotes("/notes.md", 1, "summary", ["file1.ts", "file2.ts"], []);
     const content = mockAppendFileSync.mock.calls[0][1] as string;
-    expect(content).toContain("**Changes:**");
-    expect(content).toContain("- file1.ts");
-    expect(content).toContain("- file2.ts");
+    expect(content).toContain("C: file1.ts");
+    expect(content).toContain("C: file2.ts");
   });
 
   it("includes learnings when provided", () => {
     appendNotes("/notes.md", 1, "summary", [], ["learned something"]);
     const content = mockAppendFileSync.mock.calls[0][1] as string;
-    expect(content).toContain("**Learnings:**");
-    expect(content).toContain("- learned something");
+    expect(content).toContain("L: learned something");
   });
 
   it("omits changes section when array is empty", () => {
     appendNotes("/notes.md", 1, "summary", [], ["learning"]);
     const content = mockAppendFileSync.mock.calls[0][1] as string;
-    expect(content).not.toContain("**Changes:**");
+    expect(content).not.toContain("C:");
   });
 
   it("omits learnings section when array is empty", () => {
     appendNotes("/notes.md", 1, "summary", ["change"], []);
     const content = mockAppendFileSync.mock.calls[0][1] as string;
-    expect(content).not.toContain("**Learnings:**");
+    expect(content).not.toContain("L:");
   });
 });
 

@@ -54,6 +54,8 @@ This is iteration ${params.n}. Each iteration aims to make an incremental step f
 
 ## Output
 
+Keep output ultra-concise: outcomes, decisions, and durable learnings only. No filler, edit narration, or validation chores.
+
 ${outputFields.join("\n")}${stopConditionSection}
 
 ## Objective

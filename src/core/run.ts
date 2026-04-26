@@ -197,7 +197,7 @@ export function setupRun(
   if (!existsSync(notesPath)) {
     writeFileSync(
       notesPath,
-      `# gnhf run: ${runId}\n\n## Iteration Log\n`,
+      `run: ${runId}\nformat: entry=iteration. C=change. L=learning.\n`,
       "utf-8",
     );
   }
@@ -355,9 +355,19 @@ export function toStringArray(value: unknown): string[] {
   return [];
 }
 
-function formatListSection(title: string, items: string[]): string {
+function formatTaggedLines(tag: string, items: string[]): string {
   if (items.length === 0) return "";
-  return `**${title}:**\n${items.map((item) => `- ${item}`).join("\n")}\n`;
+  return `${items.map((item) => `${tag}: ${item}`).join("\n")}\n`;
+}
+
+function formatIterationHeading(iteration: number, summary: string): string {
+  const status = summary.match(/^\[(FAIL|ERROR)\](?:\s+(.+))?$/);
+  if (status) {
+    return status[2]
+      ? `${iteration} [${status[1].toLowerCase()}]: ${status[2]}`
+      : `${iteration} [${status[1].toLowerCase()}]`;
+  }
+  return `${iteration}: ${summary}`;
 }
 
 export function appendNotes(
@@ -368,11 +378,10 @@ export function appendNotes(
   learnings: string[],
 ): void {
   const entry = [
-    `\n### Iteration ${iteration}\n`,
-    `**Summary:** ${summary}\n`,
-    formatListSection("Changes", changes),
-    formatListSection("Learnings", learnings),
-  ].join("\n");
+    `\n${formatIterationHeading(iteration, summary)}\n`,
+    formatTaggedLines("C", changes),
+    formatTaggedLines("L", learnings),
+  ].join("");
 
   appendFileSync(notesPath, entry, "utf-8");
 }
