@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.1.27](https://github.com/novadev94/gnhf/compare/gnhf-v0.1.26...gnhf-v0.1.27) (2026-04-29)
+
+
+### Features
+
+* add live terminal title updates ([#70](https://github.com/novadev94/gnhf/issues/70)) ([f8b57d6](https://github.com/novadev94/gnhf/commit/f8b57d6a7640cff457f3d399b4aa1b44bb37abbe))
+* add RovoDev agent support ([#11](https://github.com/novadev94/gnhf/issues/11)) ([484d989](https://github.com/novadev94/gnhf/commit/484d989a632aebef27b4592f96ffd7fd4f25fde0))
+* Add support for Pi coding agent ([#97](https://github.com/novadev94/gnhf/issues/97)) ([380de4e](https://github.com/novadev94/gnhf/commit/380de4e97ea4d08517cf8fa0352b3db035c6517b))
+* **agents:** use prompt_async endpoint instead of blocking /message ([#56](https://github.com/novadev94/gnhf/issues/56)) ([ef5d6d3](https://github.com/novadev94/gnhf/commit/ef5d6d3c8c6634abccaebd28db59086cb294f8ee))
+* **cli:** add iteration and token caps ([#9](https://github.com/novadev94/gnhf/issues/9)) ([b92e9ac](https://github.com/novadev94/gnhf/commit/b92e9aca196647b19c854b722551e401c4ce72a7))
+* **codex:** allow per-agent cli arg overrides ([#58](https://github.com/novadev94/gnhf/issues/58)) ([4c1731e](https://github.com/novadev94/gnhf/commit/4c1731e0f1fc321d3ac63818bffe6dd245ed3dbe))
+* **config:** add agent path overrides ([#24](https://github.com/novadev94/gnhf/issues/24)) ([c8a71c6](https://github.com/novadev94/gnhf/commit/c8a71c61019fd4795dabe3e5bdda4e7a44771855))
+* **core:** add detailed error logging ([#54](https://github.com/novadev94/gnhf/issues/54)) ([84eaa15](https://github.com/novadev94/gnhf/commit/84eaa15e740d35e81508a4dce91405656eb34ff3))
+* **core:** track branch commits from run base ([#5](https://github.com/novadev94/gnhf/issues/5)) ([dce09e6](https://github.com/novadev94/gnhf/commit/dce09e6a0a47644a174428c7a29b6e19f189486b))
+* git worktree support so that it can support multiple features to one git repository ([#63](https://github.com/novadev94/gnhf/issues/63)) ([bf9e3d8](https://github.com/novadev94/gnhf/commit/bf9e3d86899e6f3c6421605566849d110b55c1db))
+* graceful shutdown on first ctrl+c ([#88](https://github.com/novadev94/gnhf/issues/88)) ([385211d](https://github.com/novadev94/gnhf/commit/385211d7e460d8a3abd273f40b69b01eb368b690))
+* initial commit ([c8ae6d2](https://github.com/novadev94/gnhf/commit/c8ae6d21f4cf0b493386c00bdaa023b947d02451))
+* **opencode:** add OpenCode agent integration ([#13](https://github.com/novadev94/gnhf/issues/13)) ([aa9a2a5](https://github.com/novadev94/gnhf/commit/aa9a2a5cecbfe95abe6830dff40750aa03ee0423))
+* **orchestrator:** add --stop-when condition to end loop ([#74](https://github.com/novadev94/gnhf/issues/74)) ([3ad2c86](https://github.com/novadev94/gnhf/commit/3ad2c861afcc47d46037e076e9646b29a167448d))
+* **renderer:** adapt content to viewport ([#20](https://github.com/novadev94/gnhf/issues/20)) ([592d80b](https://github.com/novadev94/gnhf/commit/592d80b6d9befb9a38f44cc19346e736c01a5220))
+* **renderer:** randomize star field seeds ([#22](https://github.com/novadev94/gnhf/issues/22)) ([e658f32](https://github.com/novadev94/gnhf/commit/e658f32004bc54b66ef3c23fec85857f1132fece))
+* **sleep:** prevent system sleep during runs ([#17](https://github.com/novadev94/gnhf/issues/17)) ([091d9d3](https://github.com/novadev94/gnhf/commit/091d9d31b80a4c1b3c01fd7e65009ad86d864ec1))
+* **worktree:** resume into a preserved worktree on re-invocation ([#76](https://github.com/novadev94/gnhf/issues/76)) ([f0e05f3](https://github.com/novadev94/gnhf/commit/f0e05f3a819b396367415942715b755a2ac62b33))
+
+
+### Bug Fixes
+
+* **agents:** dedupe Claude usage across repeated assistant snapshots ([#72](https://github.com/novadev94/gnhf/issues/72)) ([22a4728](https://github.com/novadev94/gnhf/commit/22a472831471b66051c27018ac8a033e3c06299d))
+* **agents:** make stop output schema conditional on --stop-when ([#82](https://github.com/novadev94/gnhf/issues/82)) ([36f69e8](https://github.com/novadev94/gnhf/commit/36f69e8d480f259b0142eb5aa9e1b25ad69f09cc))
+* **agents:** preserve final Claude output before forced shutdown ([#93](https://github.com/novadev94/gnhf/issues/93)) ([61e37a8](https://github.com/novadev94/gnhf/commit/61e37a87ea3811e16f1e04ba7dd38db8ce94a011))
+* **cli:** clarify loop prompts and abort UI ([#26](https://github.com/novadev94/gnhf/issues/26)) ([90022c1](https://github.com/novadev94/gnhf/commit/90022c1df1d0456d67255c6d36dec968ffa9e943))
+* **cli:** correct version flag ([a1203ca](https://github.com/novadev94/gnhf/commit/a1203caf8a6fbb794b8a954b4acdf79ebba2ebd8))
+* **cli:** handle resume prompt overwrite from the controlling terminal ([#77](https://github.com/novadev94/gnhf/issues/77)) ([cc18215](https://github.com/novadev94/gnhf/commit/cc1821531af107adfd31253feabdd24077867110))
+* **cli:** persist stop-when on resume ([#100](https://github.com/novadev94/gnhf/issues/100)) ([0051228](https://github.com/novadev94/gnhf/commit/00512284b8bd7d71e421a0bd408d7ed7bb418172))
+* **cli:** preserve run history when updating a resumed prompt ([#91](https://github.com/novadev94/gnhf/issues/91)) ([61306e9](https://github.com/novadev94/gnhf/commit/61306e9a2a29f8ebd6885f1fe02bdf1fd3b8917b))
+* **cli:** show friendly non-git error ([#7](https://github.com/novadev94/gnhf/issues/7)) ([65acf6b](https://github.com/novadev94/gnhf/commit/65acf6be343b805b99a6011d1562ac54b05b6760))
+* **core:** harden git command inputs against shell injection ([#68](https://github.com/novadev94/gnhf/issues/68)) ([b19d778](https://github.com/novadev94/gnhf/commit/b19d778a1322d636e1179aa29b5fe606e7c8b0cc))
+* **core:** preserve agent output and back off only on hard errors ([#89](https://github.com/novadev94/gnhf/issues/89)) ([b369ae8](https://github.com/novadev94/gnhf/commit/b369ae80fd752d11729046d971a5ab09be18c394))
+* **iteration-prompt:** clarify notes.md instructions ([2182240](https://github.com/novadev94/gnhf/commit/218224073890831d667850272b4234f6fefc68b8))
+* Normalize changes and learnings to avoid JSON schema non-adherence to break the notes.md file ([#59](https://github.com/novadev94/gnhf/issues/59)) ([3b1427b](https://github.com/novadev94/gnhf/commit/3b1427b8eeaac7463da95c358e4bf8a510542772))
+* **orchestrator:** handle aborts and preserve successful recordings ([#66](https://github.com/novadev94/gnhf/issues/66)) ([7ad041d](https://github.com/novadev94/gnhf/commit/7ad041ddabdd70cf18e1a20e2ed917e7372bc2da))
+* repo field in package json ([d635f42](https://github.com/novadev94/gnhf/commit/d635f42286f2a2904752d3d06319e2950d992934))
+* **schema:** enforce strict output schema ([#14](https://github.com/novadev94/gnhf/issues/14)) ([085aef7](https://github.com/novadev94/gnhf/commit/085aef74ba647a582aa280697213790abfa49cfa))
+* update README and lower maxConsecutiveFailures to 3 ([ad8925b](https://github.com/novadev94/gnhf/commit/ad8925b93e80e62af615eff7fc56e8399cdee4b8))
+
 ## [0.1.26](https://github.com/kunchenguid/gnhf/compare/gnhf-v0.1.25...gnhf-v0.1.26) (2026-04-24)
 
 
