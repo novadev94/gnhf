@@ -9,7 +9,15 @@ import {
 } from "node:fs";
 import { join, dirname, isAbsolute } from "node:path";
 import { execFileSync } from "node:child_process";
-import { buildAgentOutputSchema } from "./agents/types.js";
+import {
+  buildAgentOutputSchema,
+  type AgentOutputCommitField,
+} from "./agents/types.js";
+import {
+  CONVENTIONAL_COMMIT_MESSAGE,
+  getCommitMessageSchemaFields,
+  type CommitMessageConfig,
+} from "./commit-message.js";
 import { findLegacyRunBaseCommit, getHeadCommit } from "./git.js";
 
 export interface RunInfo {
@@ -23,21 +31,45 @@ export interface RunInfo {
   baseCommitPath: string;
   stopWhenPath: string;
   stopWhen: string | undefined;
+  commitMessagePath: string;
+  commitMessage: CommitMessageConfig | undefined;
+}
+
+export interface RunMetadata {
+  runId: string;
+  runDir: string;
+  promptPath: string;
+  schemaPath: string;
+  commitMessagePath: string;
+  commitMessage: CommitMessageConfig | undefined;
 }
 
 const LOG_FILENAME = "gnhf.log";
 const STOP_WHEN_FILENAME = "stop-when";
+const COMMIT_MESSAGE_FILENAME = "commit-message";
 
-function writeSchemaFile(schemaPath: string, includeStopField: boolean): void {
+function writeSchemaFile(
+  schemaPath: string,
+  schemaOptions: RunSchemaOptions,
+): void {
   writeFileSync(
     schemaPath,
-    JSON.stringify(buildAgentOutputSchema({ includeStopField }), null, 2),
+    JSON.stringify(
+      buildAgentOutputSchema({
+        includeStopField: schemaOptions.includeStopField,
+        commitFields: schemaOptions.commitFields,
+      }),
+      null,
+      2,
+    ),
     "utf-8",
   );
 }
 
 export interface RunSchemaOptions {
   includeStopField: boolean;
+  commitFields?: AgentOutputCommitField[];
+  commitMessage?: CommitMessageConfig;
   stopWhen?: string;
   clearStopWhen?: boolean;
 }
@@ -46,6 +78,80 @@ function readStopWhen(stopWhenPath: string): string | undefined {
   if (!existsSync(stopWhenPath)) return undefined;
   const stopWhen = readFileSync(stopWhenPath, "utf-8").trim();
   return stopWhen.length > 0 ? stopWhen : undefined;
+}
+
+function commitMessageMetadataValue(
+  commitMessage: CommitMessageConfig | undefined,
+): "default" | "conventional" {
+  return commitMessage?.preset ?? "default";
+}
+
+function readCommitMessageMetadata(
+  commitMessagePath: string,
+): CommitMessageConfig | undefined {
+  const value = readFileSync(commitMessagePath, "utf-8").trim();
+  if (value === "" || value === "default") return undefined;
+  if (value === "conventional") return CONVENTIONAL_COMMIT_MESSAGE;
+  throw new Error(`Unknown commit message metadata: ${value}`);
+}
+
+function inferCommitMessageFromSchema(
+  schemaPath: string,
+): CommitMessageConfig | undefined {
+  if (!existsSync(schemaPath)) return undefined;
+  try {
+    const schema = JSON.parse(readFileSync(schemaPath, "utf-8")) as {
+      properties?: Record<string, unknown>;
+    };
+    if (
+      schema.properties?.type !== undefined &&
+      schema.properties.scope !== undefined
+    ) {
+      return CONVENTIONAL_COMMIT_MESSAGE;
+    }
+  } catch {
+    // Legacy metadata is best-effort; malformed schemas fall back to default.
+  }
+  return undefined;
+}
+
+function resolveRunCommitMessage(
+  commitMessagePath: string,
+  schemaPath: string,
+): CommitMessageConfig | undefined {
+  if (existsSync(commitMessagePath)) {
+    return readCommitMessageMetadata(commitMessagePath);
+  }
+
+  const commitMessage = inferCommitMessageFromSchema(schemaPath);
+  writeFileSync(
+    commitMessagePath,
+    `${commitMessageMetadataValue(commitMessage)}\n`,
+    "utf-8",
+  );
+  return commitMessage;
+}
+
+function peekRunCommitMessage(
+  commitMessagePath: string,
+  schemaPath: string,
+): CommitMessageConfig | undefined {
+  if (existsSync(commitMessagePath)) {
+    return readCommitMessageMetadata(commitMessagePath);
+  }
+
+  return inferCommitMessageFromSchema(schemaPath);
+}
+
+function writeCommitMessageMetadata(
+  commitMessagePath: string,
+  commitMessage: CommitMessageConfig | undefined,
+): void {
+  writeFileSync(
+    commitMessagePath,
+    `${commitMessageMetadataValue(commitMessage)}\n`,
+    "utf-8",
+  );
 }
 
 function ensureRunMetadataIgnored(cwd: string): void {
@@ -97,7 +203,7 @@ export function setupRun(
   }
 
   const schemaPath = join(runDir, "output-schema.json");
-  writeSchemaFile(schemaPath, schemaOptions.includeStopField);
+  writeSchemaFile(schemaPath, schemaOptions);
 
   const logPath = join(runDir, LOG_FILENAME);
 
@@ -115,6 +221,9 @@ export function setupRun(
   if (stopWhen !== undefined) {
     writeFileSync(stopWhenPath, `${stopWhen}\n`, "utf-8");
   }
+  const commitMessagePath = join(runDir, COMMIT_MESSAGE_FILENAME);
+  const commitMessage = schemaOptions.commitMessage;
+  writeCommitMessageMetadata(commitMessagePath, commitMessage);
 
   return {
     runId,
@@ -127,6 +236,8 @@ export function setupRun(
     baseCommitPath,
     stopWhenPath,
     stopWhen,
+    commitMessagePath,
+    commitMessage,
   };
 }
 
@@ -157,10 +268,14 @@ export function resumeRun(
     stopWhen = schemaOptions.stopWhen;
     writeFileSync(stopWhenPath, `${stopWhen}\n`, "utf-8");
   }
-  writeSchemaFile(
-    schemaPath,
-    schemaOptions.includeStopField || stopWhen !== undefined,
-  );
+  const commitMessagePath = join(runDir, COMMIT_MESSAGE_FILENAME);
+  const commitMessage = resolveRunCommitMessage(commitMessagePath, schemaPath);
+  writeSchemaFile(schemaPath, {
+    ...schemaOptions,
+    commitMessage,
+    commitFields: getCommitMessageSchemaFields(commitMessage),
+    includeStopField: schemaOptions.includeStopField || stopWhen !== undefined,
+  });
 
   return {
     runId,
@@ -173,6 +288,29 @@ export function resumeRun(
     baseCommitPath,
     stopWhenPath,
     stopWhen,
+    commitMessagePath,
+    commitMessage,
+  };
+}
+
+export function peekRunMetadata(runId: string, cwd: string): RunMetadata {
+  const runDir = join(cwd, ".gnhf", "runs", runId);
+  if (!existsSync(runDir)) {
+    throw new Error(`Run directory not found: ${runDir}`);
+  }
+
+  const promptPath = join(runDir, "prompt.md");
+  const schemaPath = join(runDir, "output-schema.json");
+  const commitMessagePath = join(runDir, COMMIT_MESSAGE_FILENAME);
+  const commitMessage = peekRunCommitMessage(commitMessagePath, schemaPath);
+
+  return {
+    runId,
+    runDir,
+    promptPath,
+    schemaPath,
+    commitMessagePath,
+    commitMessage,
   };
 }
 

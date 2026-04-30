@@ -88,6 +88,8 @@ const stubRunInfo: RunInfo = {
   baseCommitPath: "/repo/.gnhf/runs/test-run/base-commit",
   stopWhenPath: "/repo/.gnhf/runs/test-run/stop-when",
   stopWhen: undefined,
+  commitMessagePath: "/repo/.gnhf/runs/test-run/commit-message",
+  commitMessage: undefined,
 };
 
 const noStopSchema = {
@@ -149,6 +151,30 @@ describe("createAgent", () => {
       bin: undefined,
       extraArgs: undefined,
       schema: withStopSchema,
+    });
+  });
+
+  it("hands ClaudeAgent a schema with configured commit message fields", () => {
+    createAgent("claude", stubRunInfo, undefined, undefined, {
+      includeStopField: false,
+      commitFields: [
+        { name: "type", allowed: ["feat", "fix"] },
+        { name: "scope" },
+      ],
+    });
+
+    expect(ClaudeAgent).toHaveBeenCalledWith({
+      bin: undefined,
+      extraArgs: undefined,
+      schema: {
+        ...noStopSchema,
+        properties: {
+          ...noStopSchema.properties,
+          type: { type: "string", enum: ["feat", "fix"] },
+          scope: { type: "string" },
+        },
+        required: [...noStopSchema.required, "type", "scope"],
+      },
     });
   });
 

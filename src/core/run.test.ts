@@ -29,7 +29,14 @@ import {
   readFileSync,
 } from "node:fs";
 import { findLegacyRunBaseCommit, getHeadCommit } from "./git.js";
-import { setupRun, appendNotes, resumeRun, toStringArray } from "./run.js";
+import {
+  setupRun,
+  appendNotes,
+  resumeRun,
+  peekRunMetadata,
+  toStringArray,
+} from "./run.js";
+import { CONVENTIONAL_COMMIT_MESSAGE } from "./commit-message.js";
 
 const P = "/project";
 
@@ -135,6 +142,28 @@ describe("setupRun", () => {
     expect(schema.required).toContain("should_fully_stop");
   });
 
+  it("writes configured commit message fields into output-schema.json", () => {
+    setupRun("run-abc", "test", "abc123", P, {
+      includeStopField: false,
+      commitFields: [
+        { name: "type", allowed: ["feat", "fix"] },
+        { name: "scope" },
+      ],
+    });
+    const schemaCall = mockWriteFileSync.mock.calls.find(
+      (call) =>
+        typeof call[0] === "string" && call[0].endsWith("output-schema.json"),
+    );
+    const schema = JSON.parse(schemaCall![1] as string);
+    expect(schema.properties.type).toEqual({
+      type: "string",
+      enum: ["feat", "fix"],
+    });
+    expect(schema.properties.scope).toEqual({ type: "string" });
+    expect(schema.required).toContain("type");
+    expect(schema.required).toContain("scope");
+  });
+
   it("writes the branch base commit for new runs", () => {
     setupRun("run-abc", "test", "abc123", P, { includeStopField: false });
 
@@ -164,6 +193,33 @@ describe("setupRun", () => {
     expect(mockWriteFileSync).not.toHaveBeenCalledWith(
       join(P, ".gnhf", "runs", "run-abc", "stop-when"),
       expect.any(String),
+      "utf-8",
+    );
+  });
+
+  it("writes default commit message metadata when commitMessage is omitted", () => {
+    setupRun("run-abc", "test", "abc123", P, { includeStopField: false });
+
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      join(P, ".gnhf", "runs", "run-abc", "commit-message"),
+      "default\n",
+      "utf-8",
+    );
+  });
+
+  it("writes conventional commit message metadata when configured", () => {
+    setupRun("run-abc", "test", "abc123", P, {
+      includeStopField: false,
+      commitMessage: CONVENTIONAL_COMMIT_MESSAGE,
+      commitFields: [
+        { name: "type", allowed: ["feat", "fix"] },
+        { name: "scope" },
+      ],
+    });
+
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      join(P, ".gnhf", "runs", "run-abc", "commit-message"),
+      "conventional\n",
       "utf-8",
     );
   });
@@ -225,6 +281,8 @@ describe("setupRun", () => {
       baseCommitPath: join(runDir, "base-commit"),
       stopWhenPath: join(runDir, "stop-when"),
       stopWhen: undefined,
+      commitMessagePath: join(runDir, "commit-message"),
+      commitMessage: undefined,
     });
   });
 });
@@ -311,6 +369,86 @@ describe("resumeRun", () => {
     expect(info.stopWhen).toBeUndefined();
   });
 
+  it("uses stored default commit message metadata on resume even when live config is conventional", () => {
+    const runDir = join(P, ".gnhf", "runs", "run-abc");
+    const commitMessagePath = join(runDir, "commit-message");
+    mockExistsSync.mockImplementation(
+      (path) => path === runDir || path === commitMessagePath,
+    );
+    mockReadFileSync.mockImplementation((path) =>
+      path === commitMessagePath ? "default\n" : "",
+    );
+
+    const info = resumeRun("run-abc", P, {
+      includeStopField: false,
+      commitMessage: CONVENTIONAL_COMMIT_MESSAGE,
+      commitFields: [
+        { name: "type", allowed: ["feat", "fix"] },
+        { name: "scope" },
+      ],
+    });
+
+    expect(info.commitMessage).toBeUndefined();
+    expect(info.commitMessagePath).toBe(commitMessagePath);
+    const schemaCall = mockWriteFileSync.mock.calls.find(
+      (call) =>
+        typeof call[0] === "string" && call[0].endsWith("output-schema.json"),
+    );
+    const schema = JSON.parse(schemaCall![1] as string);
+    expect(schema.properties.type).toBeUndefined();
+    expect(schema.properties.scope).toBeUndefined();
+  });
+
+  it("uses stored conventional commit message metadata on resume even when live config is default", () => {
+    const runDir = join(P, ".gnhf", "runs", "run-abc");
+    const commitMessagePath = join(runDir, "commit-message");
+    mockExistsSync.mockImplementation(
+      (path) => path === runDir || path === commitMessagePath,
+    );
+    mockReadFileSync.mockImplementation((path) =>
+      path === commitMessagePath ? "conventional\n" : "",
+    );
+
+    const info = resumeRun("run-abc", P, { includeStopField: false });
+
+    expect(info.commitMessage).toEqual(CONVENTIONAL_COMMIT_MESSAGE);
+    const schemaCall = mockWriteFileSync.mock.calls.find(
+      (call) =>
+        typeof call[0] === "string" && call[0].endsWith("output-schema.json"),
+    );
+    const schema = JSON.parse(schemaCall![1] as string);
+    expect(schema.properties.type).toBeDefined();
+    expect(schema.properties.scope).toBeDefined();
+  });
+
+  it("backfills missing commit message metadata from an existing conventional schema", () => {
+    const runDir = join(P, ".gnhf", "runs", "run-abc");
+    const schemaPath = join(runDir, "output-schema.json");
+    const commitMessagePath = join(runDir, "commit-message");
+    mockExistsSync.mockImplementation(
+      (path) => path === runDir || path === schemaPath,
+    );
+    mockReadFileSync.mockImplementation((path) =>
+      path === schemaPath
+        ? JSON.stringify({
+            properties: {
+              type: { type: "string" },
+              scope: { type: "string" },
+            },
+          })
+        : "",
+    );
+
+    const info = resumeRun("run-abc", P, { includeStopField: false });
+
+    expect(info.commitMessage).toEqual(CONVENTIONAL_COMMIT_MESSAGE);
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      commitMessagePath,
+      "conventional\n",
+      "utf-8",
+    );
+  });
+
   it("backfills missing base-commit for legacy runs", () => {
     const runDir = join(P, ".gnhf", "runs", "run-abc");
     mockExistsSync.mockImplementation((path) => path === runDir);
@@ -337,6 +475,63 @@ describe("resumeRun", () => {
 
     expect(mockGetHeadCommit).toHaveBeenCalledWith(P);
     expect(info.baseCommit).toBe("head456");
+  });
+});
+
+describe("peekRunMetadata", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("reads stored commit message metadata without writing files", () => {
+    const runDir = join(P, ".gnhf", "runs", "run-abc");
+    const commitMessagePath = join(runDir, "commit-message");
+    mockExistsSync.mockImplementation(
+      (path) => path === runDir || path === commitMessagePath,
+    );
+    mockReadFileSync.mockImplementation((path) =>
+      path === commitMessagePath ? "conventional\n" : "",
+    );
+
+    const metadata = peekRunMetadata("run-abc", P);
+
+    expect(metadata.promptPath).toBe(join(runDir, "prompt.md"));
+    expect(metadata.commitMessage).toEqual(CONVENTIONAL_COMMIT_MESSAGE);
+    expect(mockWriteFileSync).not.toHaveBeenCalled();
+  });
+
+  it("infers legacy conventional metadata from the schema without backfilling", () => {
+    const runDir = join(P, ".gnhf", "runs", "run-abc");
+    const schemaPath = join(runDir, "output-schema.json");
+    const commitMessagePath = join(runDir, "commit-message");
+    mockExistsSync.mockImplementation(
+      (path) => path === runDir || path === schemaPath,
+    );
+    mockReadFileSync.mockImplementation((path) =>
+      path === schemaPath
+        ? JSON.stringify({
+            properties: {
+              type: { type: "string" },
+              scope: { type: "string" },
+            },
+          })
+        : "",
+    );
+
+    const metadata = peekRunMetadata("run-abc", P);
+
+    expect(metadata.commitMessagePath).toBe(commitMessagePath);
+    expect(metadata.commitMessage).toEqual(CONVENTIONAL_COMMIT_MESSAGE);
+    expect(mockWriteFileSync).not.toHaveBeenCalled();
+  });
+
+  it("throws when the run directory is missing", () => {
+    mockExistsSync.mockReturnValue(false);
+
+    expect(() => peekRunMetadata("run-abc", P)).toThrow(
+      "Run directory not found",
+    );
+    expect(mockWriteFileSync).not.toHaveBeenCalled();
   });
 });
 

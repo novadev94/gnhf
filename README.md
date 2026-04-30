@@ -143,7 +143,7 @@ npm link
 - **Iteration finalization** - agents are expected to finish validation, stop any background processes they started, and only then emit the final JSON result for the iteration
 - **Graceful interrupts** - in the interactive TUI, the first Ctrl+C requests a graceful stop and lets the current iteration finish (or ends backoff early), the second Ctrl+C force-stops immediately, and `SIGTERM` also force-stops immediately
 - **Shared memory** — the agent reads `notes.md` (built up from prior iterations) to communicate across iterations
-- **Local run metadata** — gnhf stores prompt, notes, and resume metadata under `.gnhf/runs/` and ignores it locally, so your branch only contains intentional work
+- **Local run metadata** — gnhf stores prompt, notes, stop conditions, and commit-message convention metadata under `.gnhf/runs/` and ignores it locally, so your branch only contains intentional work
 - **Resume support** — run `gnhf` while on an existing `gnhf/` branch to pick up where a previous run left off; if you provide a different prompt, gnhf asks whether to update the saved prompt and continue with the existing history, start a new branch, or quit. New runs whose generated branch already exists use a numeric suffix such as `gnhf/<slug>-1`.
 
 ### Worktree Mode
@@ -219,6 +219,12 @@ agent: claude
 #     - --thinking
 #     - high
 
+# Commit message convention (optional)
+# Defaults to: gnhf #<iteration>: <summary>
+# Use the conventional preset for semantic-release compatible headers:
+# commitMessage:
+#   preset: conventional
+
 # Abort after this many consecutive failures
 maxConsecutiveFailures: 3
 
@@ -236,6 +242,12 @@ The iteration and token caps are runtime-only flags and are not persisted in `co
 - Use it for agent-specific options like models, profiles, or reasoning settings without adding a dedicated `gnhf` config field for each one.
 - For `codex`, `claude`, and `copilot`, `gnhf` adds its usual non-interactive permission default only when you do not provide your own permission or execution-mode flag. If you set one explicitly, `gnhf` treats that as user-managed and does not add its default on top.
 - Flags that `gnhf` manages itself for a given agent, such as output-shaping or local-server startup flags, are rejected during config loading so you get a clear error instead of duplicate-argument ambiguity. For `pi` specifically, `--api-key` is also blocked; configure the Pi API key via Pi's own config or the environment variable it reads, not via `agentArgsOverride`.
+
+`commitMessage` controls the subject line that gnhf uses for each successful iteration commit.
+
+- Omit it to keep the default `gnhf #<iteration>: <summary>` format.
+- Set `preset: conventional` to ask the agent for `type` and optional `scope`, then commit as `type(scope): summary` for semantic-release style workflows. Valid types are `build`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `test`, and `chore`; invalid or missing types fall back to `chore`, and empty scopes are omitted.
+- The resolved commit-message convention is saved per run, so resuming a `gnhf/` branch keeps the original subject format even if `config.yml` changes later.
 
 ### Custom Agent Paths
 

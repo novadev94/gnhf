@@ -11,6 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { CONVENTIONAL_COMMIT_MESSAGE } from "./core/commit-message.js";
 import type { Config } from "./core/config.js";
 import type { RunInfo } from "./core/run.js";
 
@@ -37,6 +38,8 @@ const stubRunInfo: RunInfo = {
   baseCommitPath: "/repo/.gnhf/runs/run-abc/base-commit",
   stopWhenPath: "/repo/.gnhf/runs/run-abc/stop-when",
   stopWhen: undefined,
+  commitMessagePath: "/repo/.gnhf/runs/run-abc/commit-message",
+  commitMessage: undefined,
 };
 
 interface CliMockOverrides {
@@ -51,6 +54,7 @@ interface CliMockOverrides {
   removeWorktree?: ReturnType<typeof vi.fn>;
   listWorktreePaths?: ReturnType<typeof vi.fn>;
   worktreeExists?: ReturnType<typeof vi.fn>;
+  peekRunMetadata?: ReturnType<typeof vi.fn>;
   resumeRun?: ReturnType<typeof vi.fn>;
   orchestratorStart?: ReturnType<typeof vi.fn>;
   orchestratorGetState?: ReturnType<typeof vi.fn>;
@@ -90,6 +94,8 @@ async function runCliWithMocks(
     overrides.startSleepPrevention ??
     vi.fn(() => Promise.resolve({ type: "skipped", reason: "unsupported" }));
   let consoleErrorCalls: unknown[][] = [];
+  const setupRun = vi.fn(() => stubRunInfo);
+  const peekRunMetadata = overrides.peekRunMetadata ?? vi.fn(() => stubRunInfo);
 
   const orchestratorStart =
     overrides.orchestratorStart ?? vi.fn(() => Promise.resolve());
@@ -148,7 +154,8 @@ async function runCliWithMocks(
     worktreeExists: overrides.worktreeExists ?? vi.fn(() => false),
   }));
   vi.doMock("./core/run.js", () => ({
-    setupRun: vi.fn(() => stubRunInfo),
+    setupRun,
+    peekRunMetadata,
     resumeRun: overrides.resumeRun ?? vi.fn(),
     getLastIterationNumber: vi.fn(() => 0),
   }));
@@ -222,6 +229,8 @@ async function runCliWithMocks(
     consoleErrorCalls,
     loadConfig,
     createAgent,
+    setupRun,
+    peekRunMetadata,
     orchestratorCtor,
     orchestratorGetState,
     orchestratorRequestGracefulStop,
@@ -323,6 +332,7 @@ async function runSigintCliTest({
   }));
   vi.doMock("./core/run.js", () => ({
     setupRun: vi.fn(() => stubRunInfo),
+    peekRunMetadata: vi.fn(() => stubRunInfo),
     resumeRun: vi.fn(),
     getLastIterationNumber: vi.fn(() => 0),
   }));
@@ -412,6 +422,10 @@ async function importCliExpectError(timeoutMs = 250): Promise<unknown> {
 async function runCliResumeWithActualRun(
   args: string[],
   storedStopWhen?: string,
+  opts: {
+    liveCommitMessage?: typeof CONVENTIONAL_COMMIT_MESSAGE;
+    storedCommitMessage?: "default" | "conventional";
+  } = {},
 ) {
   const originalArgv = [...process.argv];
   const originalCwd = process.cwd();
@@ -432,12 +446,16 @@ async function runCliResumeWithActualRun(
   const promptPath = join(runDir, "prompt.md");
   const baseCommitPath = join(runDir, "base-commit");
   const stopWhenPath = join(runDir, "stop-when");
+  const commitMessagePath = join(runDir, "commit-message");
   const schemaPath = join(runDir, "output-schema.json");
   mkdirSync(runDir, { recursive: true });
   writeFileSync(promptPath, "existing prompt", "utf-8");
   writeFileSync(baseCommitPath, "abc123\n", "utf-8");
   if (storedStopWhen !== undefined) {
     writeFileSync(stopWhenPath, `${storedStopWhen}\n`, "utf-8");
+  }
+  if (opts.storedCommitMessage !== undefined) {
+    writeFileSync(commitMessagePath, `${opts.storedCommitMessage}\n`, "utf-8");
   }
 
   const appendDebugLog = vi.fn();
@@ -452,6 +470,9 @@ async function runCliResumeWithActualRun(
       agent: "claude",
       agentPathOverride: {},
       agentArgsOverride: {},
+      ...(opts.liveCommitMessage === undefined
+        ? {}
+        : { commitMessage: opts.liveCommitMessage }),
       maxConsecutiveFailures: 3,
       preventSleep: false,
     })),
@@ -515,6 +536,8 @@ async function runCliResumeWithActualRun(
     schema: Record<string, unknown>;
     stopWhenExists: boolean;
     stopWhenContent?: string;
+    commitMessageExists: boolean;
+    commitMessageContent?: string;
   };
 
   try {
@@ -528,6 +551,7 @@ async function runCliResumeWithActualRun(
     await import("./cli.js");
 
     const stopWhenExists = existsSync(stopWhenPath);
+    const commitMessageExists = existsSync(commitMessagePath);
     result = {
       appendDebugLog,
       createAgent,
@@ -539,6 +563,10 @@ async function runCliResumeWithActualRun(
       stopWhenExists,
       stopWhenContent: stopWhenExists
         ? readFileSync(stopWhenPath, "utf-8")
+        : undefined,
+      commitMessageExists,
+      commitMessageContent: commitMessageExists
+        ? readFileSync(commitMessagePath, "utf-8")
         : undefined,
     };
   } finally {
@@ -761,6 +789,104 @@ describe("cli", () => {
     );
   });
 
+  it("threads commit message fields into run setup and agent creation", async () => {
+    const { createAgent, setupRun } = await runCliWithMocks(["ship it"], {
+      agent: "codex",
+      agentPathOverride: {},
+      agentArgsOverride: {},
+      commitMessage: CONVENTIONAL_COMMIT_MESSAGE,
+      maxConsecutiveFailures: 3,
+      preventSleep: false,
+    });
+
+    const expectedSchemaOptions = {
+      includeStopField: false,
+      commitMessage: CONVENTIONAL_COMMIT_MESSAGE,
+      commitFields: [
+        {
+          name: "type",
+          allowed: [
+            "build",
+            "ci",
+            "docs",
+            "feat",
+            "fix",
+            "perf",
+            "refactor",
+            "test",
+            "chore",
+          ],
+        },
+        { name: "scope" },
+      ],
+    };
+    expect(setupRun).toHaveBeenCalledWith(
+      expect.stringMatching(/^ship-it-/),
+      "ship it",
+      "abc123",
+      process.cwd(),
+      expectedSchemaOptions,
+    );
+    expect(createAgent).toHaveBeenCalledWith(
+      "codex",
+      stubRunInfo,
+      undefined,
+      undefined,
+      expectedSchemaOptions,
+    );
+  });
+
+  it("combines stop-when and commit message fields in schema options", async () => {
+    const { createAgent, setupRun } = await runCliWithMocks(
+      ["ship it", "--stop-when", "all checks pass"],
+      {
+        agent: "codex",
+        agentPathOverride: {},
+        agentArgsOverride: {},
+        commitMessage: CONVENTIONAL_COMMIT_MESSAGE,
+        maxConsecutiveFailures: 3,
+        preventSleep: false,
+      },
+    );
+
+    const expectedSchemaOptions = {
+      includeStopField: true,
+      stopWhen: "all checks pass",
+      commitMessage: CONVENTIONAL_COMMIT_MESSAGE,
+      commitFields: [
+        {
+          name: "type",
+          allowed: [
+            "build",
+            "ci",
+            "docs",
+            "feat",
+            "fix",
+            "perf",
+            "refactor",
+            "test",
+            "chore",
+          ],
+        },
+        { name: "scope" },
+      ],
+    };
+    expect(setupRun).toHaveBeenCalledWith(
+      expect.stringMatching(/^ship-it-/),
+      "ship it",
+      "abc123",
+      process.cwd(),
+      expectedSchemaOptions,
+    );
+    expect(createAgent).toHaveBeenCalledWith(
+      "codex",
+      stubRunInfo,
+      undefined,
+      undefined,
+      expectedSchemaOptions,
+    );
+  });
+
   it("reuses the persisted stop-when condition when resuming without --stop-when", async () => {
     const { appendDebugLog, createAgent, orchestratorCtor, schema } =
       await runCliResumeWithActualRun([], "all tests pass");
@@ -840,6 +966,55 @@ describe("cli", () => {
     expect(
       (schema.properties as Record<string, unknown>).should_fully_stop,
     ).toBe(undefined);
+  });
+
+  it("keeps a resumed default commit message run on the default convention when live config changes", async () => {
+    const { createAgent, orchestratorCtor, schema } =
+      await runCliResumeWithActualRun([], undefined, {
+        liveCommitMessage: CONVENTIONAL_COMMIT_MESSAGE,
+        storedCommitMessage: "default",
+      });
+
+    expect(createAgent).toHaveBeenCalledWith(
+      "claude",
+      expect.objectContaining({ commitMessage: undefined }),
+      undefined,
+      undefined,
+      { includeStopField: false },
+    );
+    expect(orchestratorCtor.mock.calls[0]?.[0]).toMatchObject({
+      commitMessage: undefined,
+    });
+    expect((schema.properties as Record<string, unknown>).type).toBeUndefined();
+    expect(
+      (schema.properties as Record<string, unknown>).scope,
+    ).toBeUndefined();
+  });
+
+  it("keeps a resumed conventional commit message run conventional when live config changes", async () => {
+    const { createAgent, orchestratorCtor, schema } =
+      await runCliResumeWithActualRun([], undefined, {
+        storedCommitMessage: "conventional",
+      });
+
+    expect(createAgent).toHaveBeenCalledWith(
+      "claude",
+      expect.objectContaining({ commitMessage: CONVENTIONAL_COMMIT_MESSAGE }),
+      undefined,
+      undefined,
+      expect.objectContaining({
+        includeStopField: false,
+        commitFields: expect.arrayContaining([
+          expect.objectContaining({ name: "type" }),
+          expect.objectContaining({ name: "scope" }),
+        ]),
+      }),
+    );
+    expect(orchestratorCtor.mock.calls[0]?.[0]).toMatchObject({
+      commitMessage: CONVENTIONAL_COMMIT_MESSAGE,
+    });
+    expect((schema.properties as Record<string, unknown>).type).toBeDefined();
+    expect((schema.properties as Record<string, unknown>).scope).toBeDefined();
   });
 
   it("passes max iteration and token caps to the orchestrator", async () => {
@@ -1145,6 +1320,7 @@ describe("cli", () => {
     }));
     vi.doMock("./core/run.js", () => ({
       setupRun: vi.fn(() => stubRunInfo),
+      peekRunMetadata: vi.fn(() => stubRunInfo),
       resumeRun: vi.fn(),
       getLastIterationNumber: vi.fn(() => 0),
     }));
@@ -1290,6 +1466,11 @@ describe("cli", () => {
     }));
     vi.doMock("./core/run.js", () => ({
       setupRun: vi.fn(() => stubRunInfo),
+      peekRunMetadata: vi.fn(() => ({
+        ...stubRunInfo,
+        runId: "existing-run",
+        promptPath,
+      })),
       resumeRun: vi.fn(() => ({
         ...stubRunInfo,
         runId: "existing-run",
@@ -1419,6 +1600,11 @@ describe("cli", () => {
     }));
     vi.doMock("./core/run.js", () => ({
       setupRun: vi.fn(() => stubRunInfo),
+      peekRunMetadata: vi.fn(() => ({
+        ...stubRunInfo,
+        runId: "existing-run",
+        promptPath,
+      })),
       resumeRun: vi.fn(() => ({
         ...stubRunInfo,
         runId: "existing-run",
@@ -1544,6 +1730,11 @@ describe("cli", () => {
     }));
     vi.doMock("./core/run.js", () => ({
       setupRun: vi.fn(() => stubRunInfo),
+      peekRunMetadata: vi.fn(() => ({
+        ...stubRunInfo,
+        runId: "existing-run",
+        promptPath,
+      })),
       resumeRun: vi.fn(() => ({
         ...stubRunInfo,
         runId: "existing-run",
@@ -1664,6 +1855,11 @@ describe("cli", () => {
     }));
     vi.doMock("./core/run.js", () => ({
       setupRun: vi.fn(() => stubRunInfo),
+      peekRunMetadata: vi.fn(() => ({
+        ...stubRunInfo,
+        runId: "existing-run",
+        promptPath,
+      })),
       resumeRun: vi.fn(() => ({
         ...stubRunInfo,
         runId: "existing-run",
@@ -1781,6 +1977,11 @@ describe("cli", () => {
     }));
     vi.doMock("./core/run.js", () => ({
       setupRun: vi.fn(() => stubRunInfo),
+      peekRunMetadata: vi.fn(() => ({
+        ...stubRunInfo,
+        runId: "existing-run",
+        promptPath,
+      })),
       resumeRun: vi.fn(() => ({
         ...stubRunInfo,
         runId: "existing-run",
@@ -1849,6 +2050,16 @@ describe("cli", () => {
     const promptPath = join(tempDir, "PROMPT.md");
     const orchestratorCtor = vi.fn();
     const setupRun = vi.fn(() => stubRunInfo);
+    const peekRunMetadata = vi.fn(() => ({
+      ...stubRunInfo,
+      runId: "existing-run",
+      promptPath,
+    }));
+    const resumeRun = vi.fn(() => ({
+      ...stubRunInfo,
+      runId: "existing-run",
+      promptPath,
+    }));
 
     writeFileSync(promptPath, "existing prompt", "utf-8");
 
@@ -1889,11 +2100,8 @@ describe("cli", () => {
     }));
     vi.doMock("./core/run.js", () => ({
       setupRun,
-      resumeRun: vi.fn(() => ({
-        ...stubRunInfo,
-        runId: "existing-run",
-        promptPath,
-      })),
+      peekRunMetadata,
+      resumeRun,
       getLastIterationNumber: vi.fn(() => 3),
     }));
     vi.doMock("./core/agents/factory.js", () => ({
@@ -1947,6 +2155,14 @@ describe("cli", () => {
     try {
       await import("./cli.js");
 
+      expect(peekRunMetadata).toHaveBeenCalledWith(
+        "existing-run",
+        process.cwd(),
+      );
+      expect(resumeRun).toHaveBeenCalledTimes(1);
+      expect(resumeRun).toHaveBeenCalledWith("existing-run", process.cwd(), {
+        includeStopField: false,
+      });
       expect(setupRun).toHaveBeenCalledWith(
         "existing-run",
         "new prompt",
@@ -2148,6 +2364,7 @@ describe("cli", () => {
     }));
     vi.doMock("./core/run.js", () => ({
       setupRun: vi.fn(() => stubRunInfo),
+      peekRunMetadata: vi.fn(() => stubRunInfo),
       resumeRun: vi.fn(),
       getLastIterationNumber: vi.fn(() => 0),
     }));
@@ -2291,6 +2508,7 @@ describe("cli", () => {
     }));
     vi.doMock("./core/run.js", () => ({
       setupRun: vi.fn(() => stubRunInfo),
+      peekRunMetadata: vi.fn(() => stubRunInfo),
       resumeRun: vi.fn(),
       getLastIterationNumber: vi.fn(() => 0),
     }));
@@ -2460,6 +2678,7 @@ describe("cli", () => {
     }));
     vi.doMock("./core/run.js", () => ({
       setupRun: vi.fn(() => stubRunInfo),
+      peekRunMetadata: vi.fn(() => stubRunInfo),
       resumeRun: vi.fn(),
       getLastIterationNumber: vi.fn(() => 0),
     }));
@@ -2609,6 +2828,7 @@ describe("cli", () => {
     }));
     vi.doMock("./core/run.js", () => ({
       setupRun: vi.fn(() => stubRunInfo),
+      peekRunMetadata: vi.fn(() => stubRunInfo),
       resumeRun: vi.fn(),
       getLastIterationNumber: vi.fn(() => 0),
     }));
@@ -2853,6 +3073,65 @@ describe("cli", () => {
     }
   });
 
+  it("clears stop-when when resuming a preserved worktree with an empty value", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "gnhf-cli-worktree-resume-"));
+    const repoRoot = join(tempDir, "repo");
+    const hash = createHash("sha256")
+      .update("ship it")
+      .digest("hex")
+      .slice(0, 6);
+    const runId = `ship-it-${hash}`;
+    const branch = `gnhf/${runId}`;
+    const worktreeRoot = join(tempDir, "repo-gnhf-worktrees");
+    const worktreePath = join(worktreeRoot, runId);
+    mkdirSync(join(worktreePath, ".gnhf", "runs", runId), {
+      recursive: true,
+    });
+
+    const resumeRun = vi.fn(() => ({
+      ...stubRunInfo,
+      runId,
+      runDir: join(worktreePath, ".gnhf", "runs", runId),
+      stopWhen: undefined,
+    }));
+
+    try {
+      const { createAgent, orchestratorCtor } = await runCliWithMocks(
+        ["ship it", "--worktree", "--stop-when", ""],
+        {
+          agent: "claude",
+          agentPathOverride: {},
+          agentArgsOverride: {},
+          maxConsecutiveFailures: 3,
+          preventSleep: false,
+        },
+        {
+          getRepoRootDir: vi.fn(() => repoRoot),
+          getCurrentBranch: vi.fn((cwd: string) =>
+            cwd === worktreePath ? branch : "main",
+          ),
+          listWorktreePaths: vi.fn(() => new Set([worktreePath])),
+          resumeRun,
+        },
+      );
+
+      expect(resumeRun).toHaveBeenCalledWith(runId, worktreePath, {
+        includeStopField: false,
+        clearStopWhen: true,
+      });
+      expect(createAgent.mock.calls[0]?.[4]).toEqual({
+        includeStopField: false,
+      });
+      expect(orchestratorCtor.mock.calls[0]?.[6]).toEqual({
+        maxIterations: undefined,
+        maxTokens: undefined,
+        stopWhen: undefined,
+      });
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("resumes a preserved suffixed worktree before creating an available unsuffixed one", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "gnhf-cli-worktree-resume-"));
     const repoRoot = join(tempDir, "repo");
@@ -2911,6 +3190,60 @@ describe("cli", () => {
     }
   });
 
+  it("uses the persisted commit message convention when resuming a preserved worktree", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "gnhf-cli-worktree-resume-"));
+    const repoRoot = join(tempDir, "repo");
+    const hash = createHash("sha256")
+      .update("ship it")
+      .digest("hex")
+      .slice(0, 6);
+    const runId = `ship-it-${hash}`;
+    const branch = `gnhf/${runId}`;
+    const worktreeRoot = join(tempDir, "repo-gnhf-worktrees");
+    const worktreePath = join(worktreeRoot, runId);
+    mkdirSync(join(worktreePath, ".gnhf", "runs", runId), {
+      recursive: true,
+    });
+
+    const resumeRun = vi.fn(() => ({
+      ...stubRunInfo,
+      runId,
+      runDir: join(worktreePath, ".gnhf", "runs", runId),
+      commitMessage: undefined,
+    }));
+
+    try {
+      const { createAgent, orchestratorCtor } = await runCliWithMocks(
+        ["ship it", "--worktree"],
+        {
+          agent: "claude",
+          agentPathOverride: {},
+          agentArgsOverride: {},
+          maxConsecutiveFailures: 3,
+          preventSleep: false,
+          commitMessage: CONVENTIONAL_COMMIT_MESSAGE,
+        },
+        {
+          getRepoRootDir: vi.fn(() => repoRoot),
+          getCurrentBranch: vi.fn((cwd: string) =>
+            cwd === worktreePath ? branch : "main",
+          ),
+          listWorktreePaths: vi.fn(() => new Set([worktreePath])),
+          resumeRun,
+        },
+      );
+
+      expect(createAgent.mock.calls[0]?.[4]).toEqual({
+        includeStopField: false,
+      });
+      expect(orchestratorCtor.mock.calls[0]?.[0]).toEqual(
+        expect.objectContaining({ commitMessage: undefined }),
+      );
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("exits with error when --worktree is used from a gnhf branch", async () => {
     const originalArgv = [...process.argv];
     const stdoutWrite = vi
@@ -2954,6 +3287,10 @@ describe("cli", () => {
     }));
     vi.doMock("./core/run.js", () => ({
       setupRun: vi.fn(() => stubRunInfo),
+      peekRunMetadata: vi.fn(() => ({
+        ...stubRunInfo,
+        promptPath: "/repo/.gnhf/runs/existing-run/PROMPT.md",
+      })),
       resumeRun: vi.fn(() => ({
         ...stubRunInfo,
         promptPath: "/repo/.gnhf/runs/existing-run/PROMPT.md",
